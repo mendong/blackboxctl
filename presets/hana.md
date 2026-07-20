@@ -47,8 +47,43 @@ All three slots had total volume `85`. Enabled/disabled states below are based o
 
 ## Final values
 
-Exact saved values will be recorded after each slot is written and re-opened in M-EFCS.
+All slots use total volume `85`.
+
+### P01 — Hana Warm Clean
+
+- Pickup: neck single-coil; guitar tone starting point 7-8
+- FX: `Compress`; Gate 5, Sustain 35, Attack 55, Level 50; enabled
+- AMP: `2FD_CL`; Gain 25, Level 70, Bass 45, Mid 55, Treble 47; enabled
+- CAB: `11FD_TW1980`; Level 70, Low Cut 87, High Cut 18.0K; enabled
+- MOD: `Chorus`; Speed 20, Depth 20, Mix 10; enabled
+- REV: `Room`; Decay 28, Mix 20, HPass 60, LPass 45, Depth 45; enabled
+- DLY: `Dual`; Time 18, Fb 6, Mix 6, Grit 0, Speed 0, Depth 0; enabled
+
+### P02 — Hana Edge
+
+- Pickup: neck single-coil; guitar tone starting point 7-8
+- FX: `Compress`; Gate 15, Sustain 35, Attack 60, Level 50; enabled
+- AMP: `4BLUE_OD`; Gain 38, Level 70, Bass 42, Mid 58, Treble 50; enabled
+- CAB: `7VOX_AC30`; Level 70, Low Cut 78, High Cut 18.0K; enabled
+- MOD: `Chorus`; Speed 60, Depth 50, Mix 72; disabled
+- REV: `Hall`; Decay 29, Mix 12, HPass 80, LPass 80, Depth 40; enabled
+- DLY: `Analog`; Time 30, Fb 15, Mix 8, Phaser 0, Pitch 0; enabled
+
+### P03 — Hana Acoustic Clean
+
+- Pickup: neck+middle or middle single-coil; guitar tone starting point 7-8
+- Substitution: no acoustic simulator was present, so `3JC120_CL` and `5HIFI_OK` provide the neutral clean path.
+- FX: `Compress`; Gate 21, Sustain 53, Attack 58, Level 50; enabled
+- AMP: `3JC120_CL`; Gain 23, Level 67, Bass 43, Mid 46, Treble 62; enabled
+- CAB: `5HIFI_OK`; Level 68, Low Cut 81, High Cut 18.0K; enabled
+- MOD: `Chorus`; Speed 60, Depth 50, Mix 72; disabled
+- REV: `Hall`; Decay 10, Mix 15, HPass 48, LPass 49, Depth 30; enabled
+- DLY: `Dual`; Time 84, Fb 47, Mix 15, Grit 0, Speed 0, Depth 0; disabled
 
 ## Verification
 
-Pending device write, persistence check, P41 safety check, and player listening check.
+- Device write: passed; M-EFCS displayed `Success!` after saving P01, P02, and P03.
+- Persistence: passed; each slot was switched away from and re-opened, and the values above remained stored.
+- P41 safety: passed by read-only inspection. It still showed total volume 85, `1J900_CL` Gain 45, `7VOX_AC30`, Chorus Mix 12, Room Mix 12, and disabled Dual delay.
+- Output level: all three slots are set to total volume 85, but perceived loudness still needs an instrument listening check.
+- Player listening check: pending. Compare the three presets against `Hana` with the connected HSS Strat and adjust only after hearing the actual guitar/pickup output.
