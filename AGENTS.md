@@ -4,15 +4,41 @@
 
 This workspace is for designing, documenting, and validating guitar presets for the user's connected M-VAVE BlackBox.
 
-The current goal is to create a guitar-accompaniment preset inspired by Fujii Kaze's `Hana` and validate it on the physical device.
+## Tone Source Policy
+
+Presets are built from **community capture files plus third-party IRs**, not from the
+built-in amp models and not from the factory presets. The factory presets are abandoned.
+
+- Slot maps, install procedure, pairing rules, and sources: [presets/library.md](presets/library.md)
+- Default IR when in doubt: `01A_ML Sound Lab's BEST IR IN THE WORLD` in IR slot 1.
+- Built-in amp models may still be referenced, but only for the reserved slots that the
+  protected P41 preset depends on.
+- Earlier built-in-model preset values are kept in each song document under a
+  `Superseded` heading. Do not treat them as targets.
 
 ## Known Hardware and Software
 
 - Device: M-VAVE BlackBox
 - M-EFCS connection label previously observed: `BLACKBOX v20`
-- Preset editor: `/Applications/M-EFCS.app`
+- Preset editor: `/Applications/M-EFCS.app`, bundle id `com.digAmp.dgAmp`, Mac App Store build
+- M-EFCS version last observed: `3.5.2615` (`CFBundleVersion` `3052615`)
 - macOS audio-device label previously observed: `USB-Audio`
+- Device capacity: 20 amp slots, 20 IR/CAB slots, both replaceable. Factory amp models can be restored from the PC version of M-EFCS.
+- Sandboxed file library: `~/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS/` with `ampFile` for captures and `cabFile` for IRs.
 - Treat connection labels, installed-app state, preset slots, and current parameter values as time-sensitive. Verify them before changing the device.
+
+## Loading a Capture or IR Library
+
+M-EFCS scans `ampFile` and `cabFile` once at launch and keeps no index file. So:
+
+1. Copy capture files into `ampFile` and IR `.wav` files into `cabFile`.
+2. Quit and reopen M-EFCS. Files copied while it is running will not appear.
+3. Reconnect the BlackBox from the `Connect` tab.
+4. The entries appear in the AMP and CAB tabs, each with an `Audition` button.
+
+This loads a whole library at once and avoids the one-file-at-a-time `Load AMP/CAB File to List` picker.
+
+Back up `ampFile`, `cabFile`, and `dsFile` before adding to them.
 
 ## Existing Known-Good Preset
 
@@ -33,10 +59,33 @@ M-EFCS may not support separately renaming every internal preset. When a name ca
 ## Preset Safety Rules
 
 1. Never overwrite `P41` unless the user explicitly requests it.
-2. Build and audition new sounds in the user-selected slot only after inspecting and recording its current contents.
-3. Before writing a preset, read and record the current slot, effect chain, parameter values, and device connection state.
-4. Prefer reversible changes. Keep enough information to restore the previous preset.
-5. After writing, verify both the saved parameter values in M-EFCS and the audible result through the connected guitar.
+2. Presets reference amp and IR slots **by number**, so replacing a slot changes every
+   preset that points at it. `P41` uses **amp slot 1** (`1J900_CL`) and **IR slot 7**
+   (`7VOX_AC30`). Keep those two slots at their factory contents while `P41` is protected.
+3. Build and audition new sounds in the user-selected slot only after inspecting and recording its current contents.
+4. Before writing a preset, read and record the current slot, effect chain, parameter values, and device connection state.
+5. Prefer reversible changes. Keep enough information to restore the previous preset.
+6. After writing, verify both the saved parameter values in M-EFCS and the audible result through the connected guitar.
+
+## Driving M-EFCS from a Session
+
+M-EFCS is a Flutter app, so its accessibility tree exposes only the window, not its
+controls. There is no way to click a named button. What works:
+
+- `osascript -e 'tell application "System Events" to tell process "m_efcs" to get {position, size} of window 1'` gives the window frame in points.
+- `cliclick` (`/opt/homebrew/bin/cliclick`) moves and clicks at screen coordinates, and types text.
+- `screencapture -x -o out.png` then reading the image is the only way to confirm what happened. Verify after every step.
+
+Rules learned the hard way:
+
+- Always confirm M-EFCS is frontmost immediately before clicking, and refuse to click if
+  it is not. A stray coordinate click lands on whatever window is in front.
+- Refuse to click outside the M-EFCS window frame.
+- The Mac may be in a Korean input source, in which case typed search text arrives as
+  Hangul. Switch to an English input source before typing.
+- Text fields do not reliably answer Cmd+A. Clear them with `kp:end` then repeated
+  `kp:delete`, with a `w:70` wait between presses, or the presses get coalesced.
+- Search in the AMP and CAB lists is a fuzzy subsequence match, not a substring match.
 
 ## Mac Monitoring Path
 
@@ -57,18 +106,29 @@ For each song preset:
 
 1. Identify the musical role: rhythm/accompaniment, lead, or a section-specific sound.
 2. Note the guitar and pickup position used for testing.
-3. Propose the complete effect chain and parameter values before writing to the device.
-4. Use the user-selected slot only after confirming whether its current contents may be overwritten.
-5. Audition against the original track or backing track at matched loudness.
-6. Adjust in this order: gain and dynamics, amp EQ, cab, modulation, delay, reverb, then output volume.
-7. Record the final slot mapping and all reproducible values in this repository.
+3. Choose the capture and the IR before the parameter values, and pair them by amp family where possible.
+4. Propose the complete effect chain and parameter values before writing to the device.
+5. Use the user-selected slot only after confirming whether its current contents may be overwritten.
+6. Audition against the original track or backing track at matched loudness.
+7. Adjust in this order: gain and dynamics, amp EQ, IR choice and IR level, modulation, delay, reverb, then output volume.
+8. Record the final slot mapping and all reproducible values in this repository.
 
-## Current Preset Target
+Capture-specific handling:
 
-- Artist: Fujii Kaze
-- Song: `Hana`
-- Intended role: guitar accompaniment
-- Guitar: HSS Strat-style guitar (single / single / humbucker)
-- Initial pickup target: neck single-coil
-- Target slot: `P01`, subject to inspecting and recording its current contents before writing
-- Status: tone design and P01 overwrite safety still need confirmation
+- Clean captures are recorded quiet; raise amp gain and level. Overdrive and higher-gain captures are recorded loud; start near the middle.
+- A capture named `IR_included`, `CabOn`, or `full rig` already has a cabinet. Turn CAB off, or leave it on only to reshape.
+- To audition an IR, use a capture already saved on the device. To audition a capture, use an IR already saved on the device. If neither is saved, the first one loaded goes silent.
+
+## Current State
+
+- P01-P03: `Hana` presets. Capture-based targets defined in [presets/hana.md](presets/hana.md); device not yet rewritten.
+- P04-P05: `Boulevard of Broken Dreams` presets. Capture-based targets defined in [presets/boulevard-of-broken-dreams.md](presets/boulevard-of-broken-dreams.md); current device contents not yet inspected.
+- P41: protected `Wonderwall Live`.
+- Library: 24 captures and 83 IRs installed and confirmed visible in M-EFCS.
+- IR slot 1 is written and verified: `1AC-SeVin` replaced by `1ML_BEST_IR`. IR slots 2-6 and 8-20, amp slots 2-20, and all five preset writes are still pending.
+
+## Known Obstacle to Long GUI Runs
+
+Another app taking focus mid-run aborts the click guard, and a Flutter dropdown dismisses
+when focus leaves. Long unattended slot-writing runs are unreliable while other apps post
+notifications. Write in short batches and re-verify the frontmost app before each batch.
