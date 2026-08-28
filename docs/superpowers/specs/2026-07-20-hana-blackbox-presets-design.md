@@ -1,5 +1,14 @@
 # Fujii Kaze `Hana` BlackBox Presets Design
 
+> ## SUPERSEDED — HISTORY ONLY.
+>
+> This design specifies P01-P03 using the BlackBox's **built-in amp models**. That approach
+> was abandoned on 2026-08-28 in favour of community capture files plus third-party IRs.
+> The values here were written to the device on 2026-07-20 and are still stored there, but
+> they are no longer the target. Current design:
+> [`presets/hana.md`](../../../presets/hana.md). Tone source policy:
+> [`presets/library.md`](../../../presets/library.md).
+
 ## Goal
 
 Create three complementary guitar-accompaniment presets for Fujii Kaze's `Hana` on an HSS Strat-style guitar and store them in M-VAVE BlackBox slots P01, P02, and P03.

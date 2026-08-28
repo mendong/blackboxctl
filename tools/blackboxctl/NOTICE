@@ -62,7 +62,7 @@ Upstream work this project is derived from
    The structure of the Base-128 encode/decode algorithm. An independent
    implementation derived from this project's test vectors was used as a
    cross-check against the codec here; the two agree bit for bit on 299 random
-   buffers and on every SysEx message captured from the device.
+   buffers and on all 13 SysEx messages in the end-to-end device run.
 
 4. am2manager
    Author:  Walter Wanderley

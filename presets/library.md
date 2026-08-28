@@ -3,13 +3,19 @@
 The built-in amp models and factory presets are no longer the basis for any preset in
 this repository. Presets are built from community capture files plus third-party IRs.
 
+This is the shared vocabulary for every preset document here: presets refer to amp and IR
+slots **by number**, and the numbers are defined in the two slot maps below.
+
 ## Why
 
-Two independent Korean-community sources reach the same conclusion:
+Two Korean-community sources reach the same conclusion:
 
 - A BlackBox owner's write-up: the factory presets are not catastrophic but there is no
   reason to use them once capture files are available. The author's working rig is an
   `OD + Friedman BE100` capture with an IR whose name starts with `ML BEST`.
+  **Uncited.** The URL for this post was not recorded and could not be recovered. It may
+  be the same petra7 muleboard post listed under Sources; until that is checked, do not
+  treat it as independent corroboration of petra7's guide.
 - petra7's BlackBox guide, appendix 3: the factory presets are described as a mess, and
   the 20 built-in IRs as clearly weaker than Soundwoofer/ML IRs. The recommendation is to
   keep the 20 stock M-VAVE amp captures if you like them but replace the IRs.
@@ -21,9 +27,35 @@ Sources are listed at the bottom of this file.
 - Captured: 2026-08-28 KST
 - M-EFCS: `3.5.2615` (`CFBundleVersion` `3052615`), Mac App Store build, bundle id
   `com.digAmp.dgAmp`
-- Connected device label: `BLACKBOX v20`
+- Connected device label reported by M-EFCS: `BLACKBOX v20`. This is the editor's label
+  for the product, not a confirmed firmware version.
+  `docs/reverse-engineering/official-docs.md` infers from a firmware filename on disk that
+  this unit runs V19. The two have not been reconciled; neither should be quoted as the
+  firmware version. The read-only device-name query would settle it.
+- The pedal is currently **unplugged**. No device command of any kind can run until it is
+  reconnected.
 - Device capacity: 20 amp slots, 20 IR/CAB slots, both replaceable. The 20 factory amp
   models can be restored from the PC version of M-EFCS.
+
+## Reading device state
+
+Since 2026-08-28 the pedal can be read directly, without the GUI and without loading
+anything, using [`tools/blackboxctl`](../tools/blackboxctl/). It is read-only by
+construction and has never written to this pedal.
+
+```sh
+cd tools/blackboxctl
+python -m blackboxctl selftest      # offline protocol check; touches nothing
+python -m blackboxctl device names  # all 20 amp and 20 IR slot names, straight from flash
+python -m blackboxctl device preset N   # decode stored PNN without loading it
+python -m blackboxctl library diff  # compare this file's slot maps against what is on disk
+```
+
+`device names` is the authority on what is actually in each slot; this file is the plan.
+`device preset N` is the way to satisfy the "record current contents before overwriting"
+rule in [AGENTS.md](../AGENTS.md). Read
+[tools/blackboxctl/STATUS.md](../tools/blackboxctl/STATUS.md) before trusting any claim
+about the tool.
 
 ## Mac-side library location
 
@@ -33,12 +65,19 @@ M-EFCS is sandboxed. Its file library lives at:
 ~/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS/
 ```
 
-| Folder | Contents |
-| --- | --- |
-| `ampFile` | capture files (`.am2`, `.am2Data`, `.am3Data`) shown in the AMP tab |
-| `cabFile` | IR files (`.wav`) shown in the CAB tab |
-| `dsFile` | drive-capture copies written by older imports |
-| `model` | 114 MB app-internal model blob, do not touch |
+It contains nine subfolders. Only the first three matter for this work:
+
+| Folder | Contents | Backed up |
+| --- | --- | --- |
+| `ampFile` | capture files (`.am2`, `.am2Data`, `.am3Data`) shown in the AMP tab — 39 entries | yes |
+| `cabFile` | IR files (`.wav`) shown in the CAB tab — 293 entries | yes |
+| `dsFile` | drive-capture copies written by older imports — 14 entries | yes |
+| `model` | 114 MB app-internal model blob, do not touch | no |
+| `aiToneFile` | `amp` / `cab` / `ds` subfolders, all empty | no |
+| `audio_library` | one `files` subfolder used by the app | no |
+| `downloadFile`, `otherFile`, `shareFile` | empty | no |
+
+Counts verified read-only on 2026-08-28 and unchanged since.
 
 Verified behaviour: files copied straight into `ampFile` / `cabFile` do **not** appear
 while the app is running, but they do appear after M-EFCS is restarted. The app keeps no
@@ -52,61 +91,193 @@ Install procedure:
 3. Reconnect the BlackBox in the `Connect` tab.
 4. The new entries are listed in the AMP / CAB tabs with an `Audition` button each.
 
-A backup of the library as it was before this change is kept outside the repository at
-`M-EFCS-library-before-20260828-041029.tgz` in the session scratchpad. It contains
-`ampFile`, `cabFile`, and `dsFile` as they were: 15 captures and 210 IRs.
+`python -m blackboxctl library install` performs step 1 and `library restart-editor`
+performs step 2. Both are dry runs unless given `--yes`.
+
+A backup of the library as it was before this change is kept **outside the repository**,
+in a session-scoped temp directory that will eventually be purged:
+
+```
+/private/tmp/claude-501/-Users-mendong-Documents-black-box--claude-worktrees-blackbox-presets-ir-setup-d4cb38/
+  e540b214-9e36-4e96-abd6-017d7cf0c2eb/scratchpad/backup/M-EFCS-library-before-20260828-041029.tgz
+```
+
+3,525,756 bytes; contains `ampFile` (15 captures), `cabFile` (210 IRs) and `dsFile` (14)
+as they were. **Move it somewhere durable.** It is the only restore point for the
+pre-existing library, and the community pack it was displaced by is not archived anywhere
+on this machine.
 
 ## What is installed
 
-- Captures added to `ampFile`: 24, on top of the 15 that were already there.
-- IRs added to `cabFile`: 83, on top of the 210 that were already there.
+- Captures added to `ampFile`: 24, on top of the 15 that were already there — 39 total,
+  which is what is on disk now.
+- IRs added to `cabFile`: 83, on top of the 210 that were already there — 293 total.
 - `01A_ML Sound Lab's BEST IR IN THE WORLD_Use_This_IR_as_Main_Default.wav` from the pack
-  is byte-identical (SHA-256 `0cafcee0…3e4e2e`) to the file in ML Sound Lab's own free
-  Dropbox giveaway, so the pack copy is the genuine IR.
+  is byte-identical to the file in ML Sound Lab's own free Dropbox giveaway, so the pack
+  copy is the genuine IR. SHA-256:
+  `0cafcee04e2c9e6794b4d98c8fcf7168131b8eb78c460ed88d53f843983e4e2e`.
+
+Not reproducible from this repository: there is no manifest of which 107 files came from
+the pack, no archived copy of the pack, and no recorded hash for it. The only host is a
+mutable Google Drive folder. If that link rots, the exact install cannot be re-created.
 
 ### IR format, measured rather than assumed
 
 M-VAVE's own spec line, in the Korean manual and the official product copy, is
-`44.1K/24Bit mono WAV, 1024 sampling points`. That line is not literally accurate about
-length: the pedal's own factory IRs measure **2048** frames, not 1024. Treat the spec as a
-statement of intent, not a hard contract.
+`44.1K/24Bit mono WAV, 1024 sampling points`. Measurement shows that line is a statement
+of intent, not a contract — **the vendor does not hold its own factory IRs to it.**
 
-What is actually installed, measured with `wave`:
+Method: the RIFF `fmt ` chunk was read directly, so the format tag (integer PCM vs IEEE
+float) is known, and the frame count comes from the `data` chunk size divided by the block
+align. An earlier revision of this file used Python's `wave` module, which reports bit
+depth but *not* the format tag, and that produced one wrong entry — corrected below.
 
-| | frames | duration | note |
-| --- | ---: | ---: | --- |
-| factory `2JVM_1960_57` | 2048 | 46 ms | 44.1 kHz, 24-bit, mono |
-| factory `7VOX_AC30` | 2048 | 46 ms | 44.1 kHz, **32-bit float** |
-| `01A ML Best IR` | 65536 | 1365 ms | **48 kHz**, 24-bit, mono |
+**All 20 factory IRs, measured on disk:**
 
-So the pedal is demonstrably running a 32-bit float factory IR and a 48 kHz user IR, which
-means it converts rather than rejects. It cannot be storing 1365 ms, so long IRs are
-certainly being shortened somewhere in the upload path.
+| Slot | File | Rate | Bits | Frames | Duration |
+| ---: | --- | ---: | --- | ---: | ---: |
+| 1 | `1AC-SeVin` | 44.1 k | 24 | 10000 | 227 ms |
+| 2 | `2JVM_1960_57` | 44.1 k | 24 | 2048 | 46 ms |
+| 3 | `3V30_MD421` | **48 k** | 24 | 2048 | 43 ms |
+| 4 | `4G12-EVH_CT` | **48 k** | 24 | 2048 | 43 ms |
+| 5 | `5HIFI_OK` | 44.1 k | 24 | 22026 | 500 ms |
+| 6 | `6WANGS212_ECM` | 44.1 k | 24 | 2048 | 46 ms |
+| 7 | `7VOX_AC30` | 44.1 k | **32 int** | 2048 | 46 ms |
+| 8 | `8FRMAN112` | **96 k** | 24 | 2048 | 21 ms |
+| 9 | `9MeOSick-III` | 44.1 k | 24 | 2048 | 46 ms |
+| 10 | `10SoldSC412` | 44.1 k | **32 float** | 1020 | 23 ms |
+| 11 | `11FD_TW1980` | **48 k** | 24 | 2048 | 43 ms |
+| 12 | `12MESA_412` | 44.1 k | 24 | 2048 | 46 ms |
+| 13 | `13HIW412SWF` | 44.1 k | 24 | 2048 | 46 ms |
+| 14 | `14Recto_112` | **96 k** | 24 | 2048 | 21 ms |
+| 15 | `15JC120_BOX` | 44.1 k | 24 | 13230 | 300 ms |
+| 16 | `16Agula410` | 44.1 k | 24 | 2048 | 46 ms |
+| 17 | `17AgSVT410 ` | 44.1 k | 24 | 2048 | 46 ms |
+| 18 | `18DgDG212N` | 44.1 k | 24 | 2048 | 46 ms |
+| 19 | `19MbSway210` | 44.1 k | 24 | 2048 | 46 ms |
+| 20 | `20Tace412 ` | 44.1 k | 24 | 2048 | 46 ms |
 
-**This matters for the slot map below.** Of the 19 IRs mapped to slots, only 7 match the
-vendor spec exactly. 7 are **stereo** and 5 are **48 kHz**:
+All twenty are mono. What the vendor ships against its own spec line:
+
+- **Length.** 16 of 20 are 2048 frames — double the stated 1024. The exceptions are
+  slot 1 (10000), slot 5 (22026), slot 15 (13230) and slot 10 (1020). Only slot 10 is
+  near the stated figure.
+- **Sample rate.** 5 of 20 are not 44.1 kHz: slots 3, 4 and 11 are 48 kHz; slots 8 and 14
+  are 96 kHz.
+- **Bit depth.** 2 of 20 are not 24-bit: slot 7 is 32-bit **integer** PCM (format tag 1),
+  slot 10 is 32-bit **IEEE float** (format tag 3).
+
+Only 13 of the 20 factory IRs are 44.1 kHz / 24-bit / mono, and none of the twenty is
+1024 frames.
+
+**What that does and does not prove — the canonical statement.** Other documents refer
+here rather than restating it:
+
+* **Demonstrated.** The vendor's own factory *source* IRs do not meet the vendor's own
+  spec line: one is 32-bit float, one is 32-bit integer, two are 96 kHz, three are 48 kHz,
+  and none is 1024 frames.
+* **Demonstrated, once.** The import path accepts a non-conforming file. A 48 kHz,
+  65536-frame mono source was written into IR slot 1 through M-EFCS on 2026-08-28 and the
+  slot works. That is the only observed import of a non-conforming file.
+* **Not demonstrated.** What the pedal does with a *stereo* source, or with a bit depth
+  other than 24. Nothing here establishes which channel it keeps or whether it sums them.
+* **Not demonstrated, and not what the table above shows.** That the pedal is *running* a
+  32-bit float or 96 kHz IR. The table measures `.wav` files in the Mac-side library, which
+  are inputs to the upload path. The on-device `CAB` record is 1358 samples of 24-bit LE
+  PCM — see
+  [capture-format-spec.md §7.1](../docs/reverse-engineering/capture-format-spec.md), so
+  whatever the source format, something in the chain converts before storage. Which side
+  converts, host or pedal, is untested.
+
+**On the 1024 figure.** Three different numbers are in circulation and they measure
+different things. 1024 is the vendor's published spec line. 2048 is the frame count of
+most factory *source* `.wav` files in this Mac library, which are inputs to the upload
+path, not device storage. The real ceiling is what an on-device CAB flash record
+physically holds: 1358 taps of 24-bit PCM in a 4096-byte record, 30.8 ms at 44.1 kHz —
+see
+[capture-format-spec.md §8](../docs/reverse-engineering/capture-format-spec.md). That is
+the number that governs truncation.
+
+**The installed user IRs, measured the same way:**
+
+| Slot | Ch | Rate | Bits | Frames | Duration |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | **48 k** | 24 | 65536 | 1365 ms |
+| 2 | **2** | 44.1 k | 24 | 13769 | 312 ms |
+| 3 | **2** | 44.1 k | 24 | 6302 | 143 ms |
+| 4 | **2** | 44.1 k | 24 | 6302 | 143 ms |
+| 5 | 1 | **48 k** | 24 | 24000 | 500 ms |
+| 6 | 1 | 44.1 k | 24 | 8850 | 201 ms |
+| 8 | **2** | 44.1 k | 24 | 66150 | **1500 ms** |
+| 9 | **2** | 44.1 k | 24 | 1837 | 42 ms |
+| 10 | 1 | 44.1 k | 24 | 22050 | 500 ms |
+| 11 | **2** | 44.1 k | 24 | 6302 | 143 ms |
+| 12 | **2** | 44.1 k | 24 | 6302 | 143 ms |
+| 13 | 1 | 44.1 k | 24 | 22051 | 500 ms |
+| 14 | 1 | 44.1 k | 24 | 8192 | 186 ms |
+| 15 | 1 | **48 k** | 24 | 24001 | 500 ms |
+| 16 | 1 | **48 k** | 24 | 28801 | 600 ms |
+| 17 | 1 | 44.1 k | 24 | 16538 | 375 ms |
+| 18 | 1 | **48 k** | 24 | 24001 | 500 ms |
+| 19 | 1 | 44.1 k | 24 | 2048 | 46 ms |
+| 20 | 1 | 44.1 k | 24 | 22050 | 500 ms |
+
+Slot 7 is omitted because it keeps its factory IR. Every one of the nineteen is 24-bit
+integer PCM.
+
+Of the 19, seven match the vendor spec **on channel count, sample rate and bit depth** —
+slots 6, 10, 13, 14, 17, 19, 20. None matches on length; the closest is slot 19 at 2048
+frames. The other twelve deviate:
 
 - stereo: slots 2, 3, 4, 8, 9, 11, 12
 - 48 kHz: slots 1, 5, 15, 16, 18
-- fully conforming: slots 6, 10, 13, 14, 17, 19, 20
 
-Slot 1 proves 48 kHz survives the trip, because it is the ML Best IR and it is what both
-community sources actually play through. Stereo is the untested risk: nothing here
-establishes which channel the pedal keeps, or whether it sums them. If a slot sounds thin,
+Slot 1 is the one demonstrated import of a non-conforming file: 48 kHz survives the trip,
+because it is the ML Best IR, it is written to the device, and it is what both community
+sources actually play through. Stereo is the untested risk: nothing here establishes which
+channel the pedal keeps, or whether it sums them. If a slot sounds thin,
 phasey, or quieter than its neighbours, check this table first — a stereo source is the
 prime suspect, and converting it to 44.1 kHz 24-bit mono before installing is the fix.
 
-Because the truncation point is unknown, prefer IRs whose useful energy is early. Most of a
-guitar cabinet's character lives in the first 20–50 ms, which is why the heavily truncated
-ML Best IR still sounds right.
+Because the truncation point is roughly 30 ms, prefer IRs whose useful energy is early.
+Most of a guitar cabinet's character lives in the first 20–50 ms, which is why the heavily
+truncated ML Best IR still sounds right. **Slot 8 is the most exposed file in the map**:
+at 66150 frames it is the longest by a wide margin, 1500 ms, of which roughly 2 % can be
+stored — and it is also stereo, and it is the CAB for Hana P02. If P02 sounds wrong, that
+is the first thing to change.
 
 ## Slot reservations
 
-`P41 Wonderwall Live` is protected, and it references slots by number, not by file. It
-uses **amp slot 1** (`1J900_CL`) and **IR slot 7** (`7VOX_AC30`). Those two slots keep
+`P41 Wonderwall Live` is protected, and it references slots by number, not by file. Its
+92-byte flash image, read on 2026-08-28, has AMP model byte `0x00` (**amp slot 1**,
+`1J900_CL`) and CAB model byte `0x06` (**IR slot 7**, `7VOX_AC30`). Those two slots keep
 their factory contents so that P41 keeps its sound. Everything else is replaced.
 
+### Slot references are live, and P06–P40 have never been read
+
+Replacing a slot silently changes every preset that points at it. Two of the presets that
+were read on 2026-08-28 are already affected by the pending writes:
+
+| Preset | Points at | Scheduled change |
+| --- | --- | --- |
+| P01 (current, built-in version) | IR slot 11 `11FD_TW1980`, amp slot 2 `2FD_CL` | slot 11 becomes `11MR_1960VB`, slot 2 becomes a Fender capture |
+| P03 (current, built-in version) | IR slot 5 `5HIFI_OK`, amp slot 3 `3JC120_CL` | slot 5 becomes `5FD_DLX_C12K`, slot 3 becomes a Fender capture |
+| P41 | amp slot 1, IR slot 7 | none — both reserved |
+
+For P01–P05 this is harmless, because they are being rewritten anyway. **For P06–P40 it
+is not.** Those 35 presets have never been read, appear in no document here, and will
+change silently when amp slots 2–20 and IR slots 2–6 and 8–20 are written.
+
+Precondition for the first slot write: run `device preset N` for N = 1..41 and record the
+amp and CAB model bytes of every preset. That is a read-only operation and does not load
+anything.
+
 ## Amp slot map (20)
+
+File names below are **abbreviated stems**. The real files carry longer suffixes
+(`_AuditionX`, `_A+`, and so on) and the extension case is inconsistent on disk.
+`python -m blackboxctl library diff` resolves stems to real files by prefix and is the
+authority; it currently reports `ok=38 reserved=2` against this file.
 
 | Slot | File | Role |
 | --- | --- | --- |
@@ -131,15 +302,22 @@ their factory contents so that P41 keeps its sound. Everything else is replaced.
 | 19 | `221B_Dist_RAT_D11_F2_V2_AuditionX_A+` | RAT, pairs with a Fender Twin IR |
 | 20 | `501_Acoustic_G_Preamp_noCAB_use_Acoustic_IR(101-109)_Best_Recommend` | acoustic sim, P03 |
 
+Slots 4 and 9 are the two most heavily abbreviated: on disk they are
+`016B_..._V7_T8_AuditionX_A+.am2data` and `009_Clean_Vox_AC30_212g12_30k_AuditionX.am2data`.
+
 Left in the Mac library for auditioning, not written to a slot:
-`101_OD_Friedman BE100 C45 SAT`, `108_OD_Vox_AC30_Drive`,
-`021_Clean_Marshall_JCM2000_DSL`, `128_OD_Klon_Centaur`,
-`137A_OD_BOSS_SD1_good_with_Rocksta_Fender_IR`.
+`101_OD_Friedman BE100 C45 SAT` (full stem `..._100K Epochs_use_Friedman_IR`),
+`108_OD_Vox_AC30_Drive` (`..._AuditionX`),
+`021_Clean_Marshall_JCM2000_DSL` (`..._AuditionX`),
+`128_OD_Klon_Centaur`, `137A_OD_BOSS_SD1_good_with_Rocksta_Fender_IR`.
 
 ## IR slot map (20)
 
-Device slot names are limited to roughly 12 characters, so each slot gets a short name
-that keeps the factory convention of a leading slot number.
+Device slot names live in a fixed 14-byte flash record holding an ASCII string plus a
+terminator, measured on both name blocks on 2026-08-28. The usable field is therefore
+**13 characters including the numeric prefix** for slots 1–9, and 12 for slots 10–20 whose
+prefix is two digits. The longest name on the device is `6WANGS212_ECM`, at exactly 13.
+Every short name below fits.
 
 | Slot | Device name | File | Role |
 | --- | --- | --- | --- |
@@ -164,20 +342,30 @@ that keeps the factory convention of a leading slot number.
 | 19 | `19AC_D35` | `102_Acoustic_G_IR_Martin_D35SA_Gplus_44100_Bld` | acoustic, P03 |
 | 20 | `20AC_TAYLOR` | `107_Acoustic_G_IR_Taylor 414 57v Pz1` | acoustic alternative |
 
-Factory contents being replaced, for reference if a restore is ever needed. All twenty were
-later read straight out of the pedal's flash over USB MIDI SysEx and confirmed, so the
-names below are the device's own, not an inference from filenames
-(see [device-validation.md](../docs/reverse-engineering/device-validation.md)):
+Slot 15's file name is abbreviated; on disk it is
+`07A_Celestion_V30 2x12 Ball 0.0in 0in_High_Quality For_Mesa_Orange_Diezel_Soldano_BlackStar.wav`.
+
+Factory contents being replaced, for reference if a restore is ever needed. Nineteen of
+these twenty were read straight out of the pedal's flash over USB MIDI SysEx on 2026-08-28
+(see [device-validation.md](../docs/reverse-engineering/device-validation.md) STEP 4), so
+those nineteen names are the device's own rather than an inference from filenames. **Slot 1
+is the exception:** flash now returns `1ML_BEST_IR` there, because this project overwrote
+it. `1AC-SeVin` is recorded from the pre-write GUI state and from the file still present in
+`cabFile`.
 
 `1AC-SeVin`, `2JVM_1960_57`, `3V30_MD421`, `4G12-EVH_CT`, `5HIFI_OK`, `6WANGS212_ECM`,
 `7VOX_AC30`, `8FRMAN112`, `9MeOSick-III`, then `10SoldSC412`, `11FD_TW1980`, `12MESA_412`,
 `13HIW412SWF`, `14Recto_112`, `15JC120_BOX`, `16Agula410`, `17AgSVT410`, `18DgDG212N`,
-`19MbSway210`, `20Tace412`. All twenty are still present as files in `cabFile`, so any slot
-can be put back.
+`19MbSway210`, `20Tace412`.
+
+All twenty are still present as files in `cabFile`, so any slot can be put back — but two
+of them are stored with a **trailing space before the extension**: `17AgSVT410 .wav` and
+`20Tace412 .wav`. An exact-name lookup written from the list above will miss those two.
 
 ## How to write one slot in M-EFCS
 
-Confirmed by writing IR slot 1. The same dialog is used in the AMP tab.
+Writing still has to go through the GUI. `blackboxctl` cannot write and is not intended
+to. Confirmed by writing IR slot 1; the same dialog is used in the AMP tab.
 
 1. Open the `CAB` tab for IRs or the `AMP` tab for captures.
 2. Type a distinctive part of the filename in `Search`. The match is a fuzzy subsequence
@@ -185,21 +373,55 @@ Confirmed by writing IR slot 1. The same dialog is used in the AMP tab.
 3. Click the row. It turns orange to show it is selected.
 4. Click `Save to Device`. A dialog appears with a `name` field, a `Position` dropdown, and
    a `Save` button.
-5. Set `name`. It is pre-filled with a truncation of the filename; about 12 characters fit.
+5. Set `name`. It is pre-filled with a truncation of the filename. The field holds 13
+   characters including the leading slot number, 12 for slots 10–20.
 6. Set `Position` to the target slot. The dropdown lists all 20 slots with their current
    contents, and defaults to slot 1.
 7. Click `Save`. The dialog closes.
 8. Verify by reopening `Save to Device` and reading the `Position` dropdown. It now shows
    the new name at that slot number. Reading the whole dropdown verifies all 20 slots at
-   once.
+   once. `python -m blackboxctl device names` verifies the same thing from flash, without
+   the GUI.
 
 ## Device write log
 
+Exactly one **amp or IR** slot has ever been written on this pedal. Five *preset* slots
+were also written earlier through the same GUI — P01-P03 on 2026-07-20 and P04-P05 on
+2026-07-26, both from built-in amp models — and those are recorded in
+[hana.md](hana.md) and [boulevard-of-broken-dreams.md](boulevard-of-broken-dreams.md), not
+here.
+
 | Date | Target | Result |
 | --- | --- | --- |
-| 2026-08-28 | IR slot 1: `1AC-SeVin` to `1ML_BEST_IR` | passed, verified in the `Position` dropdown |
+| 2026-08-28 | IR slot 1: `1AC-SeVin` to `1ML_BEST_IR` | passed |
 
-Remaining: IR slots 2-6 and 8-20, amp slots 2-20, presets P01-P05.
+Evidence, two independent readings:
+
+- the M-EFCS `Position` dropdown showed `1ML_BEST_IR` at slot 1 immediately after the save;
+- later the same day the IR name table was read straight out of flash over USB MIDI SysEx
+  and slot 1 came back `1ML_BEST_IR`
+  ([device-validation.md](../docs/reverse-engineering/device-validation.md) STEP 4).
+
+That same flash read is also the evidence for what has **not** happened: IR slots 2–20 and
+all 20 amp slots came back with their factory names (STEP 4 and STEP 5).
+
+**Still pending:** IR slots 2–6 and 8–20, amp slots 2–20, and the capture-based versions of
+presets P01–P05. No preset has been written since the July built-in-model session, so
+P01–P05 still hold those July values; nothing capture-based exists on the device yet.
+
+## Next steps, in order
+
+1. **Read-only audit.** Reconnect the pedal and run `device preset N` for N = 1..41.
+   Record each preset's amp and CAB model bytes. This gives the slot-to-preset reference
+   table needed before any slot write, and it fills in P02, P04 and P05, whose current
+   contents are unrecorded.
+2. **Move the library backup** out of the temp directory.
+3. **Write the IR slots** — 2–6 and 8–20 — through the GUI, in short batches, verifying
+   with `device names` after each batch.
+4. **Write the amp slots** — 2–20 — the same way.
+5. **Write the presets** P01–P05 from the target values in
+   [hana.md](hana.md) and [boulevard-of-broken-dreams.md](boulevard-of-broken-dreams.md).
+6. **Listening check** against the original tracks at matched loudness.
 
 ## Working rules for capture-based presets
 
@@ -237,6 +459,12 @@ Remaining: IR slots 2-6 and 8-20, amp slots 2-20, presets P01-P05.
 - If a helicopter-like noise appears while the device is connected to the Mac over USB,
   turn the BlackBox Bluetooth off or pair it with a phone. The noise comes from an
   unconnected Bluetooth radio.
+- An IR is stored on the device in a 4096-byte `CAB` record holding 1358 taps of 24-bit
+  PCM, about 30 ms at 44.1 kHz
+  ([capture-format-spec.md](../docs/reverse-engineering/capture-format-spec.md) §7.1).
+  Anything longer has to be shortened somewhere between the `.wav` on disk and that record;
+  which side does it, M-EFCS or the pedal, has not been observed. Treat 30 ms as the useful
+  budget regardless.
 
 ## Sources
 
@@ -248,8 +476,13 @@ Remaining: IR slots 2-6 and 8-20, amp slots 2-20, presets P01-P05.
   <https://mule.co.kr/m/muleboard/63236984>
 - Capture and IR pack `ANN_Captures_IRs_V16.8.zip`, 44.3 MB, from the folder linked in
   those posts: <https://drive.google.com/drive/folders/1f9G_xo7ev32TdYt5zyP6fjiXbPGMSi8->
-- ML Sound Lab, The Best IR in the World, free:
-  <http://bit.ly/MLSoundLab>
+  `capture-format-spec.md` calls the same material the `Black_Box_Captures_V16.8` pack;
+  whether that is the extracted directory name or a second download was never recorded,
+  and no hash or byte size for the archive itself exists.
+- ML Sound Lab, The Best IR in the World, free: <http://bit.ly/MLSoundLab>. This is a
+  link shortener; the canonical vendor URL was not recorded, and neither were the terms
+  attached to the giveaway. The SHA-256 above establishes that the file is genuine, not
+  that it may be redistributed.
 - Fractal forum thread on that IR:
   <https://forum.fractalaudio.com/threads/the-best-ir-in-the-world-free.137347/>
 - Soundwoofer free IR library (recommended by petra7, host was unreachable during this
@@ -258,6 +491,9 @@ Remaining: IR slots 2-6 and 8-20, amp slots 2-20, presets P01-P05.
   tab inside M-EFCS: <https://community.m-vave.com>
 - Capture search site: <https://am2manager.fly.dev/find-capture>
 
+Full source inventory with licences: [docs/sources.md](../docs/sources.md).
+
 The pack redistributes third-party captures and IRs collected by community members. The
 ML Best IR in it is the vendor's own free giveaway; the provenance of the other files is
-whatever the original uploaders provided.
+whatever the original uploaders provided. No capture or IR is committed to this
+repository.

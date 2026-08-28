@@ -1,15 +1,30 @@
 # M-Vave BlackBox — Protocol Algorithms, Implementation Reference
 
-Status: derived entirely from **static analysis of prior-art source code**. Nothing in this
-document was verified against the physical pedal — no command was sent to the device while
-producing it. Every claim below is labelled.
+Status: derived entirely from **static analysis of prior-art source code**. No command was
+sent to the device while producing it. Every claim below is labelled.
+
+> **Scope and precedence.** The wire frame format is *not* defined here. It is defined once,
+> in [`protocol-spec.md` §2](./protocol-spec.md#2-frame-format--the-canonical-model), which is
+> canonical; §3 below defers to it and keeps only this document's unique contribution, the
+> source-code provenance of each part of that grammar. Several claims first made here were
+> later checked against the real pedal in
+> [`device-validation.md`](./device-validation.md); where anything here conflicts with that
+> document, the measurement wins. This document remains authoritative for the Base-128 codec
+> (§1), the test vectors (§2), the command literals (§4), the response formats (§5), the model
+> and knob tables (§6–§7), the prior-art commentary (§8) and the capture container (§9).
 
 - **CONFIRMED (code)** — I read the byte string or the algorithm in a named source file at a
   named line, and/or reproduced it numerically with the reference implementation.
 - **HYPOTHESIS** — inference, with the evidence and the test that would settle it.
 
 Reference implementation with all vectors as executable asserts:
-`/private/tmp/claude-501/-Users-mendong-Documents-black-box--claude-worktrees-blackbox-presets-ir-setup-d4cb38/ab32803c-e35f-4920-88d6-4f38bcbad797/scratchpad/proto/base128_ref.py` — 56/56 checks pass.
+[`reference/base128_ref.py`](./reference/base128_ref.py) — 56/56 checks pass. It was
+written in a session-scoped temporary directory and has been preserved into the repository;
+see [`reference/README.md`](./reference/README.md). Earlier revisions of this document cited
+it by its original absolute path under `/private/tmp/claude-501/…`, which no longer resolves.
+
+Start at [`README.md`](./README.md) in this directory for the reading order and the
+consolidated confidence summary.
 
 ## Attribution and licensing
 
@@ -20,12 +35,23 @@ This document is derived from, and must credit:
 | [jvsobrinho/mvave-blackbox-ble](https://github.com/jvsobrinho/mvave-blackbox-ble) (Joel Victor) | CC BY-SA 4.0 (docs) / GPL-3.0 (code) | BlackBox memory map, block/knob dictionaries, BLE GATT handles |
 | [jvsobrinho/mvave-blackbox-edit](https://github.com/jvsobrinho/mvave-blackbox-edit) | MIT | `app.js` packet builders, polling loop, handshake, model name tables |
 | [pferreir/cuvave-midi](https://github.com/pferreir/cuvave-midi) | GPL-3.0 | Authoritative Base-128 encode/decode, envelope grammar, command opcodes |
-| [cbix/mvave-chocolate-sysex](https://github.com/cbix/mvave-chocolate-sysex) | see repo | Empirical SysEx dumps used as cross-check vectors |
-| [michaelforney gist](https://gist.github.com/michaelforney/d3a2790bb5f8cbcb1c931eabb50b5f20) | see gist | Prose statement of the base-128 model and the envelope field layout |
+| [cbix/mvave-chocolate-sysex](https://github.com/cbix/mvave-chocolate-sysex) | **not recorded** | Empirical SysEx dumps used as cross-check vectors |
+| [michaelforney gist](https://gist.github.com/michaelforney/d3a2790bb5f8cbcb1c931eabb50b5f20) | **not recorded** | Prose statement of the base-128 model and the envelope field layout |
 | [walterwanderley/am2manager](https://github.com/walterwanderley/am2manager) | Apache-2.0 | `.am2` / `.am2Data` container layout |
 
-Because this reference reproduces GPL-3.0 algorithm logic and CC BY-SA documentation, our CLI
-should be **GPL-3.0** and must carry the attribution above.
+Two of the six sources have **no recorded licence**. That is a gap, not a permission: their
+terms were never checked, and an unknown licence is not a permissive one. Both contributed
+material that was actually used — cbix's hex dumps as cross-check vectors (§2 V4–V6b) and the
+gist as the prose statement of the base-128 model — and that material feeds the frame grammar
+which in turn feeds GPL-3.0 code. `docs/sources.md` carries the same gap.
+
+**Licence of this document.** It is adapted from CC BY-SA 4.0 documentation, and CC BY-SA is
+a share-alike licence, so **this file is itself licensed CC BY-SA 4.0**. Attribution: *based
+on protocol research by Joel Victor, https://github.com/jvsobrinho/mvave-blackbox-ble*.
+Crediting the source is not enough on its own; share-alike is the operative half.
+
+Separately, because this reference reproduces GPL-3.0 algorithm logic, code written from it
+should be **GPL-3.0** and must carry the attribution above. `tools/blackboxctl/` is.
 
 ---
 
@@ -209,36 +235,31 @@ encoder is broken. `base128_ref.py` carries this as an explicit regression guard
 
 ---
 
-## 3. The real frame grammar
+## 3. Frame grammar — canonical account is elsewhere
 
-The CC BY-SA doc models a packet as *header(3) / command type(1) / routing(3) / target id(1) /
-padding(2) / sub-address(2) / payload*. That model is a misreading. The actual grammar,
-**CONFIRMED (code)** from `cuvave/src/parser.rs::parse_content` + `lib.rs::to_clear_vec` and
-stated independently in prose by the michaelforney gist, is:
+> **The wire frame format is defined once, in
+> [`protocol-spec.md` §2](./protocol-spec.md#2-frame-format--the-canonical-model).**
+> This document no longer states a model of its own. What was §3 here — the
+> `00 59 | opcode | 24-bit LE payload length | payload | checksum` grammar, the
+> `(space, address, size, data)` payload of opcodes `0x22`/`0x23`, and the
+> demonstration that the upstream "command type" byte is really the low byte of
+> the payload length — was derived here first, was reconciled against the bytes
+> the pedal actually returned, and is now §2.1–§2.3 of `protocol-spec.md`,
+> canonical and unchanged in substance. `protocol-spec.md` §2.7.2 records that
+> provenance; §2.7.1 there carries the point-by-point refutation of the upstream
+> wording that this section used to make.
 
-```
-offset 0..1   00 59                       fixed magic
-offset 2      command                     0x00 0x11 0x21 0x22 0x23 0x24
-offset 3..5   payload length, 24-bit LE
-offset 6..    payload (exactly `length` bytes)
-last byte     checksum = (0xFF - (sum of payload bytes)) & 0xFF
-```
+What remains below is what is unique to this document: **where each part of that
+grammar came from in the prior-art source code**, which `protocol-spec.md` does not
+record.
 
-Total frame length is always `7 + length`.
+Sources for the grammar: `cuvave/src/parser.rs::parse_content` +
+`lib.rs::to_clear_vec` (**CONFIRMED (code)**), stated independently in prose by the
+michaelforney gist, and reproduced as executable asserts in `base128_ref.py`.
+Sources for the payload structure of `0x22`/`0x23`: `parse_read_msg` /
+`parse_write_msg` / `to_clear_vec` (**CONFIRMED (code)**).
 
-This reinterpretation is decisive. Under it, the doc's "**command type** `08 / 09 / 0A / 0E /
-64`" is not a command type at all — **it is the payload length**, which is why those specific
-values recur and why they always track the packet size:
-
-| Doc "command type" | Really | Frame length |
-| :--- | :--- | :--- |
-| `08` | payload length 8 | 15 |
-| `09` | payload length 9 | 16 |
-| `0A` | payload length 10 | 17 |
-| `0E` | payload length 14 | 21 |
-| `64` | payload length 100 | 107 |
-
-### Command opcodes (offset 2)
+### Command opcodes (frame offset 2)
 
 **CONFIRMED (code)**, `cuvave/src/parser.rs::parse_content`, corroborated by
 `bbedit/app.js:1002-1016` which whitelists exactly `0x23 0x11 0x22 0x21`:
@@ -252,28 +273,19 @@ values recur and why they always track the packet size:
 | `0x23` | Read memory (empty data = request; data present = response) | **read** |
 | `0x24` | Vendor/unknown. Two forms seen on Cube Baby; never sent by bbedit. | unknown |
 
-### Memory-access payload (inside `0x22` / `0x23`)
+Everything in the BlackBox docs' "System Commands / Live Memory Write / DMA"
+tables is a special case of `0x22` and `0x23` parameterised by
+`(space, address, length)`.
 
-**CONFIRMED (code)**, `parse_read_msg` / `parse_write_msg` / `to_clear_vec`:
+### Address spaces on the BlackBox — where each base address was found
 
-```
-payload[0]     space      1 byte
-payload[1..5]  address    4 bytes, little endian
-payload[5..8]  length     3 bytes, little endian
-payload[8..]   data       present on writes and on read *responses*; absent on read requests
-```
-
-So there is exactly **one read command and one write command**, parameterised by
-`(space, address, length)`. Everything in the BlackBox docs' "System Commands / Live Memory
-Write / DMA" tables is a special case of those two.
-
-### Address spaces on the BlackBox
-
-**HYPOTHESIS (high confidence).** Derived by reparsing every hard-coded packet in
-`bbedit/app.js` through the grammar above; every one of them lands on a clean
-`(space, address, length)` triple, and the addresses form an obviously deliberate map.
-**Test that settles it:** issue `0x23` reads at these bases with our CLI and confirm the
-response `MemoryContent` echoes the same address.
+The address map itself is in `protocol-spec.md` §2.2, where seven of its nine rows
+are now **CONFIRMED** by device reads. This table records the *static-analysis
+provenance* of each base, which is how they were found before the pedal was ever
+queried. Originally labelled **HYPOTHESIS (high confidence)**; the `0x04` and `0x05`
+spaces and the five read bases below were subsequently confirmed on hardware
+(`device-validation.md` STEPS 2–6). The `0xE0000000` and `0xF0000000` bases remain
+HYPOTHESIS — they are write triggers and were never sent.
 
 | Space | Base address | Region | Evidence |
 | :--- | :--- | :--- | :--- |
@@ -281,24 +293,33 @@ response `MemoryContent` echoes the same address.
 | `0x04` | `0x10000000` | Live RAM image of the active preset, 92 bytes. Offset within it == the "Write Addr" column of `memory_map.md`. | RAM-dump read is `addr 0x10000000 len 92`; toggling FX writes `addr 0x10000008`, and 8 is FX's dump index |
 | `0x04` | `0x20000000` | Active-preset-id register, 4 bytes. | `app.js:1154` |
 | `0x04` | `0xE0000000` | Preset-load trigger. Write `0x01` to `0xE0000000 + preset_id`. | `app.js:1168` |
-| `0x04` | `0xF0000000` | Commit / OLED refresh. Zero-length write. | ble_protocol.md "Commit / UI Update" |
+| `0x04` | `0xF0000000` | Commit / OLED refresh. Zero-length write. | `ble_protocol.md` "Commit / UI Update" |
 | `0x05` | `0x80000000` | CAB (IR) name strings, 280 bytes. | `app.js:879` handshake packet |
 | `0x05` | `0x90000000` | AMP capture name strings, 280 bytes. | `app.js:862` handshake packet |
 
-The `0x10000000` base is what makes the whole memory map click: **a block's "write address"
-and its "dump index" are the same number**, because a write is just a 1- or 2-byte poke at
-`0x10000000 + index` into the same 92-byte image the dump returns.
+The `0x10000000` base is what makes the whole memory map click: **a block's "write
+address" and its "dump index" are the same number**, because a write is just a 1-
+or 2-byte poke at `0x10000000 + index` into the same 92-byte image the dump
+returns. (Read direction CONFIRMED on hardware; write direction still HYPOTHESIS,
+since no write has been performed — `device-validation.md` correction 7.)
 
-### Checksum
+### Checksum — source provenance
 
-**CONFIRMED (code).** `checksum = (0xFF - (sum of payload bytes)) & 0xFF`, i.e. the bitwise
-complement of the 8-bit payload sum (`cuvave/src/parser.rs::calc_checksum` is literally
-`!sum`).
+The canonical definition is `protocol-spec.md` §2.3. Its provenance:
 
-`bbedit/app.js:551` instead sums `frame[4 .. len-2]`. That is arithmetically identical for
-every message whose payload is under 65536 bytes, because `frame[4]` and `frame[5]` are the
-two high bytes of the 24-bit length and are always `0x00`. Verified equal on four real frames
-in `base128_ref.py`. Use the payload form; it is the one that generalises.
+* `cuvave/src/parser.rs::calc_checksum` is literally `!sum` over the payload —
+  i.e. `(0xFF - (sum of payload bytes)) & 0xFF`. **CONFIRMED (code).** This is the
+  canonical form.
+* `bbedit/app.js:551` instead sums `frame[4 .. len-2]`. That is arithmetically
+  identical for every message whose payload is under 65536 bytes, because
+  `frame[4]` and `frame[5]` are the two high bytes of the 24-bit length and are
+  normally `0x00`. Verified equal on four real frames in `base128_ref.py`.
+* **Correction to what this document originally claimed:** the two are *not*
+  always identical. The pedal's two 295-byte name replies carry `frame[4] == 0x01`,
+  a 288-byte payload, and stored checksums that validate under the payload sum but
+  not under `app.js`'s offset-4 sum. Offset 4 is refuted for inbound frames; it
+  still produces correct outbound commands, all of which have `frame[4] == 0x00`.
+  Details and the 26-frame recount are in `protocol-spec.md` §2.3.
 
 ---
 
@@ -362,25 +383,39 @@ Two things worth flagging on the save path (`app.js:1186` `savePresetToSlot`):
 | Name block | fragmented | during handshake only | see below |
 | Device name | variable | `cmd==0x11` with non-empty payload | payload is NUL-padded ASCII |
 
-**Discrepancy worth flagging.** cuvave's parser reads the ACK payload as `ACK(val[0] > 0)` —
-i.e. `0x00` means *failure*. bbedit treats the identical `00 59 00 01 00 00 00 FF` packet as a
-successful save confirmation (`app.js:975-987`). One of the two is wrong. **Test:** on our own
-device, compare the ACK payload byte after a valid command vs. a deliberately bad checksum.
-Not resolvable from source.
+**Discrepancy worth flagging — UNRESOLVED.** cuvave's parser reads the ACK payload as
+`ACK(val[0] > 0)` — i.e. `0x00` means *failure*. bbedit treats the identical
+`00 59 00 01 00 00 00 FF` packet as a successful save confirmation (`app.js:975-987`). One of
+the two is wrong. **Test:** on our own device, compare the ACK payload byte after a valid
+command vs. a deliberately bad checksum. Not resolvable from source, and not resolvable
+read-only — it needs a write, so it needs explicit user consent. No ACK has ever been
+observed on this pedal for the same reason. Carried canonically at `protocol-spec.md` §3.3,
+which also records the consequence: do not report "saved" on this byte alone.
 
 **Name-block fragmentation (CONFIRMED (code), `app.js:993-999`).** During the handshake the
 client strips a 14-byte header (`raw[0]==0x00 && raw[1]==0x59 && len>=14` ⇒ `raw[14:]`) only
-from the *first* fragment; continuation fragments are appended raw. Names are NUL-separated
+from the *first* fragment; continuation fragments are appended raw. On USB there are no
+continuation fragments and the 280 body bytes are 20 fixed 14-byte records, so a USB client
+should index slot *N* at `body[(N-1)*14]` and skip this machinery entirely — see
+`protocol-spec.md` §6 and `device-validation.md` STEP 5. Note also that the reply's trailing
+checksum byte is **not** stripped by `app.js`, and on this pedal the AMP block's checksum is
+`0x36` = ASCII `"6"`, which a naive null-split turns into a phantom 21st name. Names are NUL-separated
 ASCII with a 1- or 2-digit 1-based index prefix that must be stripped (`app.js:902`
 `decodeNamesBlock` uses `/^\d+/`). Accumulate until 20 names are complete. **Caution:** that
 regex also eats a leading digit from a genuinely numeric name (e.g. a capture called
 `59Bassman` would render as `Bassman`). Our CLI should strip the prefix by *expected index*,
 not by regex.
 
-**USB SysEx reassembly (CONFIRMED (code), `app.js:922-962`).** A single logical response can
-arrive as several Web MIDI events: first chunk starts `F0`, last ends `F7`. Buffer until `F7`.
-Over CoreMIDI the same applies — a 107-byte RAM dump becomes 125 SysEx bytes, which will not
-fit in one USB-MIDI packet.
+**USB SysEx reassembly (CONFIRMED (code), `app.js:922-962`).** A single logical response
+*can* arrive as several Web MIDI events: first chunk starts `F0`, last ends `F7`. Buffer
+until `F7`.
+
+⚠️ **Correction to what this section originally claimed.** It said a 125-byte SysEx "will not
+fit in one USB-MIDI packet" and would therefore always fragment. **Refuted on this pedal:**
+over CoreMIDI every 125-byte reply, and both 340-byte name replies, arrived as a single
+complete SysEx message (`device-validation.md` STEP 4, correction 3). Keep the reassembler —
+BLE genuinely fragments, and it costs nothing — but do not treat fragmentation as the normal
+case on USB.
 
 ---
 
@@ -415,17 +450,26 @@ slots (12 bytes); unused ones are "ghosts". `0x50 + 12 = 0x5C = 92`, so the map 
 Per-model knob names are in `app.js`'s `params` maps and agree with `memory_map.md` except for
 one conflict, noted in §8.
 
-### AMP and CAB factory names — **HYPOTHESIS (medium-high)**
+### AMP and CAB factory names — **CONFIRMED**
 
 `app.js` deliberately does **not** hard-code these; it fills `modelNames` with placeholders
 and replaces them from the flash name blocks at handshake time, because a user's captures
 overwrite the factory list. The tables below are the *factory defaults*, taken in file order
 from `priorart/bbedit/descriptions.js:133-248`, which is a name→description dictionary, not an
-indexed array. The ordering is an inference from insertion order.
+indexed array. **The ordering below was an inference from insertion order, labelled
+HYPOTHESIS (medium-high), and the proposed test has now been run.**
 
-**Corroboration:** `memory_map.md` quotes three flash reads with their 1-based indices —
-`1AC-SeVin`, `2JVM_1960_57`, `14Recto_112` — and all three land on positions 1, 2 and 14 of the
-CAB list below. **Test that settles it:** read the name blocks off our device and compare.
+**The inference was exactly right.** `device-validation.md` STEP 4–5 read all 40 names out of
+this pedal's flash. All 20 AMP names match position for position, and 19 of 20 CAB names do;
+CAB slot 1 differs only because the user overwrote `1AC-SeVin` with `1ML_BEST_IR` on
+2026-08-28, so the factory value below is still the correct one. Independently, both lists
+match the official vendor lists in `official-docs.md` §2.1–§2.2. Three lines of evidence,
+two of them external to this project.
+
+The earlier corroboration, kept because it is what justified the inference at the time:
+`memory_map.md` quotes three flash reads with their 1-based indices — `1AC-SeVin`,
+`2JVM_1960_57`, `14Recto_112` — and all three land on positions 1, 2 and 14 of the CAB list
+below.
 
 | idx (0-based) | AMP | CAB |
 | :-- | :-- | :-- |
@@ -476,20 +520,25 @@ The delay ranges are corroborated independently by `descriptions.js`, which labe
 
 ## 8. What the published documentation gets wrong or omits
 
-Ordered by how much damage each would do to an implementer.
+Ordered by how much damage each would do to an implementer. This is a flat, numbered list
+of 13 items with no subsections; other documents cite it as **"§8 item *N*"**, and the
+numbering below is stable. A citation of the form "§8.4" is a stale form of "§8 item 4".
 
 1. **The Base-128 worked example in `usb_sysex_protocol.md` is internally inconsistent.**
    Its raw and encoded arrays are from two different messages. §2 above gives the proof and
    the correct pairings. Highest-impact error in the whole doc set.
 
-2. **"Command Type" at offset 3 is not a command type; it is the payload length.** The real
-   command byte is at offset 2 (`0x22` write, `0x23` read, `0x11` query, `0x21` erase). This
+2. **"Command Type" at offset 3 is not a command type; it is the payload length.**
+   (Canonical statement, with the device bytes that prove it: `protocol-spec.md` §2.7.1
+   item 2.) The real command byte is at offset 2 (`0x22` write, `0x23` read, `0x11` query, `0x21` erase). This
    also means the doc's "Header `00 59 22` (RAM) / `00 59 23` (Flash & polling)" is a
    coincidence of RAM-writes-being-writes and flash-reads-being-reads: `00 59 22` writes to
    flash too (that is exactly the flash-save command), and `00 59 23` reads RAM.
 
-3. **"Routing", "Target ID", "Padding", "Sub-address" are one 4-byte little-endian address
-   plus one 3-byte little-endian length.** The doc's magic `10 01` / `10 02` / `E0 01` / `10 06`
+3. **"Routing", "Target ID", "Padding", "Sub-address" are one space byte plus one 4-byte
+   little-endian address plus one 3-byte little-endian length.** (Canonical statement:
+   `protocol-spec.md` §2.2 and §2.7.1 item 1, which also records that the device's own name
+   replies carry a "routing" of `01 00 05`, a value the upstream model does not allow.) The doc's magic `10 01` / `10 02` / `E0 01` / `10 06`
    pairs are just the high byte of the address (`0x10……` = RAM, `0xE0……` = preset-load) sitting
    next to the low byte of the length (1, 2, 6). Anyone implementing from the doc's model will
    build a lookup table of magic constants instead of one address arithmetic function.
@@ -502,6 +551,7 @@ Ordered by how much damage each would do to an implementer.
    `data[0x14]`).
 
 5. **"AMP Names Base Address: Flash `90 18 01 00` (Little Endian)" mis-splits the fields.**
+   (Canonical statement: `protocol-spec.md` §2.7.1 item 3.)
    `90` is the top byte of address `0x90000000`; `18 01 00` is the 24-bit length `0x000118` =
    **280 bytes**. Same for CAB: address `0x80000000`, length 280. The doc's reading yields the
    nonsense address `0x000118 90`.
@@ -510,14 +560,35 @@ Ordered by how much damage each would do to an implementer.
    printing 15 bytes whose checksum `8F` only validates at 15. Cosmetic but it will trip a
    length assertion.
 
-7. **The `.am4` claim is wrong for this device.** `memory_map.md` says the pedal stores amp
-   captures as `.am4`. **CONFIRMED (observed on this machine):** every file in the user's
-   library is `.am2` / `.am2Data` / `.am3Data`, 6144 or 6204 bytes. Details in §9.
+7. **The `.am4` claim — verdict revised; this document's original wording was too strong.**
+   It said "the `.am4` claim is wrong for this device". It is not wrong, it is *incomplete*,
+   and this entry now defers to `capture-format-spec.md` §4.2 and `official-docs.md` §5,
+   which have the evidence:
+   * The record magic `AM4\0` is **real and CONFIRMED** in current BlackBox factory data —
+     a 7868-byte record with a 928-parameter GRU, shipped in `blackbox_am4_ampCab.bin`.
+   * AM2 → AM3 → AM4 are **firmware generations** with dated vendor release notes.
+   * What is genuinely unobserved is only the **file extension** `.am4`. **CONFIRMED
+     (observed on this machine):** every file in the user's library and in the 1686-record
+     community corpus is `.am2` / `.am2Data` / `.am3Data`, 6144 or 6204 bytes. Container
+     details in §9.
+
+   Whether *this* pedal can load AM4 depends on its firmware version, which is **UNRESOLVED**
+   (`official-docs.md` §5).
 
 8. **Omitted entirely: command `0x11`, the device name/version query.** It is the safest
    possible first contact — zero-length payload, read-only, and the response is a printable
-   ASCII device string. It should be the first thing our CLI sends. Evidence: cuvave
-   `test_encode_2` plus the cbix Discovery request/response pair (§2 V2, V6b, V7).
+   ASCII device string. Evidence: cuvave `test_encode_2` plus the cbix Discovery
+   request/response pair (§2 V2, V6b, V7).
+
+   **Status in this project: not sent, and currently not sendable.** `blackboxctl`'s
+   `assert_read_only` accepts only the `00 59 23` read header, so `00 59 11 00 00 00 FF` is
+   refused and the CLI cannot emit it. That is a deliberate narrowing rather than a bug, but
+   it is worth knowing, because this query is the cheapest read-only way to settle the
+   firmware-version question that `official-docs.md` §5 leaves **UNRESOLVED** — whether this
+   pedal runs V19 (inferred from a filename, and therefore no AM4) or V20 (the label four
+   preset documents record from the M-EFCS connection screen). Either widen the gate to
+   `0x11` with an empty payload, or read the version off the device's settings screen.
+   Reported only; no code was changed.
 
 9. **Omitted entirely: command `0x21`, erase flash block.** Sets a block to `0xFF`. This is a
    *second* destructive opcode beyond the documented flash save, and it is absent from the
@@ -619,12 +690,22 @@ which are the only empirical timing data in the whole prior-art corpus.
 
 ## 11. Files
 
+**Preserved in the repository:**
+
 | Path | What |
 | :--- | :--- |
-| `/private/tmp/…/scratchpad/proto/base128_ref.py` | Reference encode/decode/checksum/frame + 56 asserts |
-| `/private/tmp/…/scratchpad/priorart/cuvave/` | pferreir/cuvave-midi, newly fetched (`src/parser.rs`, `src/lib.rs`, `examples/`) |
-| `/private/tmp/…/scratchpad/priorart/chocolate/README.md` | cbix hex dumps, newly fetched |
-| `/private/tmp/…/scratchpad/priorart/forney/` | michaelforney gist, newly fetched |
-| `/private/tmp/…/scratchpad/priorart/pocketedit/` | PocketEdit docs, newly fetched — different protocol, see §8 |
+| [`reference/base128_ref.py`](./reference/base128_ref.py) | Reference encode/decode/checksum/frame + 56 asserts. Preserved; see [`reference/README.md`](./reference/README.md). |
+| [`reference/midi_transport.py`](./reference/midi_transport.py) | The transport that actually talked to the pedal, with its read-only gate. |
+| [`logs/`](./logs/) | The seven raw device transcripts from the 2026-08-28 session. |
 
-(`…` = `/private/tmp/claude-501/-Users-mendong-Documents-black-box--claude-worktrees-blackbox-presets-ir-setup-d4cb38/ab32803c-e35f-4920-88d6-4f38bcbad797`)
+**Not preserved — these paths no longer resolve.** They were session-scoped working copies
+of upstream material in `/private/tmp/claude-501/…/scratchpad/priorart/`, and that directory
+does not survive. Everything this document took from them is transcribed above; to re-fetch,
+use the source URLs in the attribution table rather than these paths.
+
+| Original path | What it held |
+| :--- | :--- |
+| `…/scratchpad/priorart/cuvave/` | pferreir/cuvave-midi (`src/parser.rs`, `src/lib.rs`, `examples/`) — origin of §1, §2 and the opcode table |
+| `…/scratchpad/priorart/chocolate/README.md` | cbix hex dumps — origin of vectors V4, V5, V6, V6b |
+| `…/scratchpad/priorart/forney/` | michaelforney gist — prose statement of the base-128 model |
+| `…/scratchpad/priorart/pocketedit/` | PocketEdit docs — a *different* protocol, see §8 |

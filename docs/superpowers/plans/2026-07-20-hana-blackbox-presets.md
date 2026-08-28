@@ -1,5 +1,14 @@
 # Fujii Kaze `Hana` BlackBox Presets Implementation Plan
 
+> ## SUPERSEDED — HISTORY ONLY. DO NOT EXECUTE.
+>
+> This plan was fully executed on 2026-07-20 (commits `c47a50a` and `fc841a6`). Every
+> unchecked `- [ ]` below is done, not pending. Its goal — presets built from the BlackBox's
+> **built-in amp models** — was later abandoned: presets are now built from community
+> capture files plus third-party IRs. See [`presets/hana.md`](../../../presets/hana.md) for
+> the current targets and [`presets/library.md`](../../../presets/library.md) for the tone
+> source policy. The current project phase sends **nothing** to the pedal, not even reads.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Store three validated `Hana` guitar-accompaniment tones in BlackBox slots P01, P02, and P03 without changing P41.

@@ -5,28 +5,57 @@ Host: macOS (Darwin 25.4.0), Apple Silicon
 Device: M-Vave BlackBox, connected over USB, serial `4150353439333111`
 Transport under test: USB MIDI SysEx (Base-128), **not** BLE.
 
-**Every command sent during this session was read-only.** No `00 59 22` (RAM write)
-header, no command type `0x64`, no Load Preset, no Toggle, no Knob, no Routing,
-no Commit, no Write Flash Save was ever transmitted. The transport module
-(`assert_read_only`) refuses to hand anything else to CoreMIDI.
+**Every command sent during this session was read-only.** No `00 59 22` (write
+opcode) frame, no Load Preset, no Toggle, no Knob, no Routing, no Commit, no Write
+Flash Save was ever transmitted. The transport module (`assert_read_only`) refuses
+to hand anything else to CoreMIDI.
 
-## Attribution
+> **Scope and precedence.** This document holds the raw device logs and the
+> empirical results. It does **not** define the wire frame format; that is defined
+> once, in
+> [`protocol-spec.md` §2](./protocol-spec.md#2-frame-format--the-canonical-model),
+> which is canonical. STEP 7 below originally proposed a "unified packet field
+> model"; it is not a competing model but the fixed-offset specialisation of the
+> canonical grammar to opcodes `0x22`/`0x23`, and it is preserved as
+> `protocol-spec.md` §2.6. STEP 7 here now carries only the measurements. Where
+> this document's *measurements* conflict with an inference in `protocol-spec.md`
+> or `protocol-algorithms.md`, the measurements win — that is what they are for.
+
+## Attribution and licence
 
 Protocol documentation by **Joel Victor**, <https://github.com/jvsobrinho/mvave-blackbox-ble>,
 licensed **CC BY-SA 4.0**. Reference packet/codec logic from
 <https://github.com/jvsobrinho/mvave-blackbox-edit> (MIT) and, upstream of that,
-the GPL-3.0 Cuvave MIDI parser. Work derived from these must carry the same
-attribution and be licensed **GPL-3.0**.
+the GPL-3.0 Cuvave MIDI parser.
+
+Because this document is adapted from CC BY-SA 4.0 documentation, and CC BY-SA is a
+share-alike licence, **this file is itself licensed CC BY-SA 4.0**. Attribution: *based on
+protocol research by Joel Victor, https://github.com/jvsobrinho/mvave-blackbox-ble*.
+Crediting the source does not discharge share-alike on its own. Separately, *code* derived
+from the GPL-3.0 reference logic must be licensed **GPL-3.0**; `tools/blackboxctl/` is.
+
+Start at [`README.md`](./README.md) in this directory for the reading order and the
+consolidated confidence summary.
 
 ## Artifacts
 
+All of these were written into a session-scoped temporary directory that does not survive.
+**They have been preserved into the repository** at the paths below; earlier revisions of
+this document cited them as `scratchpad/proto/…`, which no longer resolves.
+
 | File | Purpose |
 | :--- | :--- |
-| `scratchpad/proto/midi_transport.py` | CoreMIDI (ctypes) transport, Base-128 codec, checksum, read-only command builders, safety gate |
-| `scratchpad/proto/validate.py` | Step-by-step validation driver (`codec`, `endpoints`, `ram`, `preset`, `cab`, `amp`, `flash`, `flash:N`, `all`) |
-| `scratchpad/proto/log_all.txt` | Full transcript of the final end-to-end run |
-| `scratchpad/proto/log_generic.txt` | Live re-run through the generalized `cmd_read()` primitive |
-| `scratchpad/proto/base128_ref.py` | Independent codec by another agent, used as a cross-check (not written by this agent) |
+| [`reference/midi_transport.py`](./reference/midi_transport.py) | CoreMIDI (ctypes) transport, Base-128 codec, checksum, read-only command builders, safety gate. **The only module that has ever transmitted to this pedal.** |
+| [`reference/validate.py`](./reference/validate.py) | Step-by-step validation driver (`codec`, `endpoints`, `ram`, `preset`, `cab`, `amp`, `flash`, `flash:N`, `all`) |
+| [`logs/log_all.txt`](./logs/log_all.txt) | Full transcript of the final end-to-end run, including the six unsolicited `20 04` frames it drew. Unsolicited frames also appear in `log_flash.txt` (five) and `log_generic.txt` (two). |
+| [`logs/log_generic.txt`](./logs/log_generic.txt) | Live re-run through the generalized `cmd_read()` primitive |
+| [`logs/log_ram.txt`](./logs/log_ram.txt), [`log_preset.txt`](./logs/log_preset.txt), [`log_cab.txt`](./logs/log_cab.txt), [`log_amp.txt`](./logs/log_amp.txt), [`log_flash.txt`](./logs/log_flash.txt) | Per-step transcripts |
+| [`reference/base128_ref.py`](./reference/base128_ref.py) | Independent codec by another agent, used as a cross-check (not written by this agent) |
+
+The frames themselves are additionally mirrored as test fixtures in
+`tools/blackboxctl/tests/fixtures/device_frames.py`. See
+[`reference/README.md`](./reference/README.md) for what those preserved modules are and are
+not. **Do not run them against the pedal** — the current phase sends nothing to the device.
 
 ## Note on the toolchain
 
@@ -127,10 +156,13 @@ F0 00 32 0D 21 06 00 00 02 00 00 00 00 41 0B 00 00 55 00 00 08 50 40 00 02 03 02
 
 ### VERDICT — CONFIRMED, exactly 107 bytes as documented
 
-* Reply header `00 59 23`, **command type `0x64` in the reply** (the doc only
-  documents `0x64` as the *Write Flash* command type; the device also uses it as
-  the reply opcode for 92-byte-payload reads). We never *sent* `0x64`.
-* Bytes 4..13 echo the request routing/sub-address (`00 00 04 00 00 00 10 5C 00 00`).
+* Reply magic + opcode `00 59 23` — read. **Byte 3 of the reply is `0x64`.** This is
+  *not* a command type: it is the low byte of the payload length, 92 + 8 = 100 =
+  `0x64`. The published doc lists `0x64` as the Write Flash command type, so a client
+  following that model reads every RAM-dump reply as a flash-write opcode. We never
+  *sent* `0x64`. See `protocol-spec.md` §2.1 and §2.7.1 item 2.
+* Bytes 6..13 echo the request's space, address and size (`04 | 00 00 00 10 | 5C 00 00`)
+  — space 4, address `0x10000000`, size 92.
 * Payload is `d[14:106]`, 92 bytes; `d[106]` is the checksum.
 * Stored checksum `0xD6` validates.
 
@@ -165,11 +197,15 @@ CAB knobs    = Level=68 L-Cut=22 H-Cut=100
 
 * `d[14] = 0x02` → **P03**, in range P01..P80. Sanity-checked against STEP 6 below,
   where flash preset index 2 returns a payload byte-identical to the live RAM dump.
-* Reply command type is `0x0C`.
+* Byte 3 of the reply is `0x0C` — again the low byte of the payload length,
+  4 + 8 = 12, not a command type.
 * Stored checksum `0xD3` validates.
-* This packet is also emitted **spontaneously** by the device (five unsolicited
-  copies were observed during the flash-read step, see `log_all.txt`). A client
-  must tolerate unsolicited `20 04` frames arriving between request and reply.
+* This packet is also emitted **spontaneously** by the device. In the end-to-end run
+  (`logs/log_all.txt`) six unsolicited copies arrived: one during the CAB-name read and
+  five during the flash-index-2 read. The per-step runs drew more — five in
+  `logs/log_flash.txt`, two in `logs/log_generic.txt` — so thirteen unsolicited copies are
+  on record across the seven logs. A client must tolerate unsolicited `20 04` frames
+  arriving between request and reply.
 
 ---
 
@@ -388,6 +424,35 @@ REV knobs    = Decay=28 Mix=20 HP=60 LP=45 k5=45
 CAB knobs    = Level=70 L-Cut=24 H-Cut=100
 ```
 
+**This decode is corroborated field for field by an independent record.**
+`presets/hana.md`'s built-in-amp-model section documents what was written to P01 through
+the M-EFCS GUI on 2026-07-20, and every field above matches it — the amp and cab model
+names via the name-list index, all five amp knobs, all three chorus values, all three delay
+values, all five room-reverb values, the cab level and the patch volume.
+
+**The two CAB Low Cut fields need the display mapping applied, and one rounding
+convention.** `protocol-spec.md` §4.3 gives `Hz = 20 + (raw/100) * 280`, so raw 24 is
+exactly **87.2 Hz** and raw 22 is exactly **81.6 Hz**. The GUI records are 87 for P01 and
+81 for P03. Both reproduce if the display truncates toward zero; under round-half-up P03
+would read 82 and disagree with its GUI record by one step. So truncation is what both
+recorded figures are consistent with — but that convention is inferred from these two
+samples and is not documented anywhere upstream, so treat these two fields as agreeing
+*to within one display step*, not bit-exactly. Every other field is an exact integer match.
+
+Taken together with P41 in STEP 6c, that is roughly forty independently recorded fields
+across three presets, all agreeing — exactly, except for the two CAB Low Cut fields, which
+agree only once the display mapping is applied and only under a truncating convention. It
+is a considerably stronger corroboration of the 92-byte memory map than the seven-field P41
+check alone, and it is worth stating because the two records were produced nine weeks apart
+by different means — one typed into a GUI, one decoded from flash.
+
+⚠️ **Do not use P01 as a factory-table oracle.** `official-docs.md` §2 proposes checking the
+92-byte map against the official factory P01–P40 assignment, and specifies reading slot 0 and
+confirming AMP `1J900_CL` / CAB `1AC-SeVin`. **That check fails on this device, correctly:**
+slot 0 decodes to AMP `FD_CL` and CAB `FD_TW1980`, because P01 was overwritten in July.
+P01–P05 and P41 are all known-edited here. The oracle is only valid on slots that have never
+been edited, and this device's edit history is in `presets/`.
+
 ### 6b. Index 2 (P03), address 184 — the address/index cross-check
 
 ```
@@ -462,7 +527,10 @@ CAB knobs    = Level=75 L-Cut=26 H-Cut=100
 | delay off | state byte `[0x0B]` = 0x00 | match |
 | total volume = 85 | `[0x00]` LE = 85 | match |
 
-Seven independent fields agreeing is decisive. The 92-byte memory map,
+Seven independent fields agreeing is decisive on its own, and it is not the whole of the
+evidence: STEP 6a and 6b add roughly thirty more fields across P01 and P03, matched against
+`presets/hana.md`'s independent record of what was written through the GUI in July. The
+92-byte memory map,
 the little-endian 16-bit knob encoding, the 0–100 normalized scale, the block
 on/off byte order, the model-byte dictionaries, and the **model byte → name-list
 index mapping (0-based model byte indexes the 20-name list)** are all CONFIRMED
@@ -470,27 +538,30 @@ on this hardware.
 
 ---
 
-## STEP 7 — A unified packet field model (CONFIRMED on 14/14 packets: 7 sent, 7 unique replies)
+## STEP 7 — Frame field measurements (14/14 packets: 7 sent, 7 unique replies)
 
-The published protocol doc describes the packet as
-`header(3) | command type(1) | routing(3) | target id(1) | padding(2) | sub-address(2) | payload | cs`
-and then has to describe each command's bytes as a special case. That framing is
-**one byte out of alignment**. Every packet observed in this session — 7 distinct
+> **This section no longer states a frame model.** The canonical model lives in
+> [`protocol-spec.md` §2](./protocol-spec.md#2-frame-format--the-canonical-model).
+> What STEP 7 originally proposed here as a "unified packet field model" — magic(3),
+> length LE16 at 3, space LE16 at 5, address LE32 at 7, size LE24 at 11, payload at
+> 14 — was **not a third model**. It is the fixed-offset specialisation of the
+> general grammar to opcodes `0x22`/`0x23`, and it is preserved verbatim as
+> `protocol-spec.md` §2.6, which is what `blackboxctl` implements. Its two
+> substantive findings, that the upstream "command type" byte and the upstream
+> AMP-names base address are each a one-byte field misalignment, were correct and
+> are carried into `protocol-spec.md` §2.7.1. Its one limitation, that it assumes
+> space/address/size are universal header fields rather than the payload structure
+> of two opcodes, and so cannot express the 8-byte ACK, the 7-byte `0x11` query or
+> cbix's 34-byte discovery reply, is recorded at `protocol-spec.md` §2.5 and §2.7.3.
+> Its disagreement with the general grammar over the ownership of `byte[5]` — length
+> bits 16–23 versus the low byte of a 16-bit space selector — is **UNRESOLVED** and
+> undecidable, because `byte[5]` is `0x00` in all 25 frames in evidence.
+
+What follows is what is unique to this document and cannot be recaptured without
+the pedal: the measurements. Every packet observed in this session — 7 distinct
 requests we sent and the 7 unique reply frames the device returned (the 29 inbound
-SysEx messages across the logs collapse to those 7), 14 packets total —
-fits this single model with no exceptions:
-
-| Offset | Size | Field | Notes |
-| :--- | :--- | :--- | :--- |
-| 0 | 3 | magic | `00 59 22` (write) / `00 59 23` (read) |
-| 3 | 2 | **length, LE16** | always `payload_len + 8` |
-| 5 | 2 | **space selector** | `00 04` = parameter/preset space, `00 05` = string space |
-| 7 | 4 | **address, LE32** | |
-| 11 | 3 | **size, LE24** | bytes requested (request) / bytes returned (reply) |
-| 14 | var | payload | absent in requests |
-| N-1 | 1 | checksum | `0xFF - (sum of bytes 5 .. N-2)` |
-
-Measured, every row independently verified:
+SysEx messages across the logs collapse to those 7), 14 packets total — was
+carved into these fields with no exceptions. Every row independently verified:
 
 ```
 packet               N hdr        len    sp         addr  size24  pay len=pay+8 size24=pay  cs@5
@@ -510,29 +581,35 @@ reply len107       107 005923     100  0004   0x000000B8      92   92      True 
 reply len107       107 005923     100  0004   0x00000E60      92   92      True       True  True
 ```
 
-The protocol is simply **memory-mapped read/write with an address space**:
+### Address bases exercised in this session
 
-| Address | Space | Meaning |
-| :--- | :--- | :--- |
-| `0x00000000 + index*92` | 04 | preset slot in flash, 92 bytes, index 0-based (P01 = 0) |
-| `0x10000000` | 04 | live RAM state, 92 bytes — same layout as a preset |
-| `0x20000000` | 04 | current preset id, 4 bytes, id in byte 0 |
-| `0x80000000` | 05 | CAB / IR name table, 280 bytes |
-| `0x90000000` | 05 | AMP capture name table, 280 bytes |
-| `0xE0000000 + id` | 04 | preset load trigger (documented, **never sent**) |
-| `0xF0000000` | 04 | commit / UI refresh (documented, **never sent**) |
+The full address map, with status labels, is `protocol-spec.md` §2.2. What this
+session establishes empirically is the five read bases below: each was requested,
+answered, and the reply echoed the same space, address and size.
 
-Consequences that matter for the CLI:
+| Address | Space | Meaning | Exercised here |
+| :--- | :--- | :--- | :--- |
+| `0x00000000 + index*92` | 04 | preset slot in flash, 92 bytes, index 0-based (P01 = 0) | yes — indices 0, 2, 40 |
+| `0x10000000` | 04 | live RAM state, 92 bytes — same layout as a preset | yes |
+| `0x20000000` | 04 | current preset id, 4 bytes, id in byte 0 | yes, plus 6 unsolicited frames in this run (13 across all seven logs) |
+| `0x80000000` | 05 | CAB / IR name table, 280 bytes | yes |
+| `0x90000000` | 05 | AMP capture name table, 280 bytes | yes |
+| `0xE0000000 + id` | 04 | preset load trigger | no — documented, **never sent** |
+| `0xF0000000` | 04 | commit / UI refresh | no — documented, **never sent** |
 
-* The doc's "command type" byte at offset 3 is really the length low byte. It is
-  `0x08` in every read request only because those carry no payload; it is `0x64`
-  in a 92-byte reply because 92 + 8 = 100; it is `0x20 01` in a name reply because
-  280 + 8 = 288. There is no `0x64` "write" opcode being echoed back at us.
-* The doc's "AMP Names Base Address: Flash `90 18 01 00` (Little Endian)" is that
-  same off-by-one misparse. The real address is `0x90000000`; the `18 01 00` beside
-  it is the 24-bit **size** field, 280 = 20 names × 14 bytes. Reading it as a
-  little-endian address (0x00011890) would be wrong, and the value only worked
-  because the bytes land in the right places by accident.
+Two conclusions from these measurements, stated canonically in `protocol-spec.md`
+§2.7.1 and repeated here because these are the bytes that establish them:
+
+* Byte 3 is the length low byte, not a command type. It is `0x08` in every read
+  request only because those carry no payload; it is `0x64` in a 92-byte reply
+  because 92 + 8 = 100; it is `0x20 01` in a name reply because 280 + 8 = 288.
+  There is no `0x64` "write" opcode being echoed back at us.
+* "AMP Names Base Address: Flash `90 18 01 00` (Little Endian)" is the same
+  misalignment. The real address is `0x90000000`, echoed by the device at offsets
+  7–10; the `18 01 00` beside it is the 24-bit **size**, 280 = 20 names × 14 bytes,
+  echoed at offsets 11–13. Reading it as a little-endian address (`0x00011890`)
+  would be wrong, and the upstream literal only worked because the bytes land in
+  the right places by accident.
 * A single generic `read(space, address, size)` primitive replaces all four
   documented read commands.
 
@@ -555,10 +632,10 @@ names by 14-byte stride: ['1ML_BEST_IR', '2JVM_1960_57', ..., '20Tace412']
 gives the CLI its demultiplexing rule: **route replies by the `address` field,
 never by arrival order.**
 
-### HYPOTHESIS — the same model explains every documented *write* command
+### HYPOTHESIS — the same fields explain every documented *write* command
 
-Not tested (writes are out of scope for this session), but the model reproduces
-each documented write example exactly, which is strong evidence:
+Not tested (writes are out of scope for this session), but the field carving
+reproduces each documented write example exactly, which is strong evidence:
 
 | Documented command | Under this model |
 | :--- | :--- |
@@ -606,9 +683,14 @@ algorithm difference.
    beside it. The algorithm itself is correct. Anyone using that pair as a unit-test
    vector will conclude, wrongly, that their encoder is broken.
 
-2. **CONFIRMED — the checksum sum starts at offset 5, not offset 4.**
+2. **CONFIRMED — the checksum sum does not start at offset 4.**
    The two string-block replies carry `byte[4] = 0x01` and their stored checksums
-   validate **only** with the sum taken over `[5 : N-1]`:
+   validate with the sum taken over `[5 : N-1]` but not over `[4 : N-1]`. The
+   canonical definition is the *payload sum*, `[6 : N-1]` (`protocol-spec.md` §2.3):
+   offsets 5 and 6 give identical results on every frame in evidence, because
+   `byte[5]` is `0x00` in all of them, and offset 6 is the one the grammar and the
+   `cuvave` reference source actually specify. What this session settles is that
+   offset 4 is refuted. Measured here:
 
    | Packet | len | byte[4] | stored | sum from 4 | sum from 5 |
    | :--- | --: | :-- | :-- | :-- | :-- |
@@ -624,7 +706,14 @@ algorithm difference.
    the documentation has `byte[4] == 0x00`, which makes the two indistinguishable
    there. Our outbound commands also all have `byte[4] == 0x00`, so the published
    formula still produces correct commands — the device accepted and answered every
-   one — but **a client that verifies inbound checksums must use offset 5.**
+   one — but **a client that verifies inbound checksums must not use offset 4.**
+
+   Offsets 5 and 6 are indistinguishable on all available evidence, because `byte[5]` is
+   `0x00` in every frame ever observed or documented. **Offset 6, the payload sum, is the
+   canonical form** — it is what the grammar says the field is and what `cuvave`'s
+   `calc_checksum` computes (`protocol-spec.md` §2.3). Offset 5 is what
+   `reference/midi_transport.py` and `blackboxctl` implement, and gives identical results
+   here. What this session settles is only that offset 4 is refuted.
 
 3. **CONFIRMED — no MTU fragmentation on USB.** `memory_map.md` prescribes a
    null-terminator-counting accumulator because BLE fragments the name dictionary.
@@ -634,15 +723,19 @@ algorithm difference.
    ASCII** and will produce a phantom 21st name if you split on nulls naively
    (observed: `"6"` from `0x36` on the AMP block).
 
-5. **CONFIRMED — there is no "command type" byte; offset 3–4 is a 16-bit length.**
+5. **CONFIRMED — there is no "command type" byte at offset 3; it is a length field.**
    The bytes that look like reply opcodes (`0x64` for 92-byte reads, `0x0C` for
    preset sync, `0x20 01` for string blocks) are `payload_len + 8` in little-endian.
-   See STEP 7. This matters because `0x64` is documented as the *Write Flash Save*
+   The real opcode is at offset 2, inside what the upstream doc calls the header.
+   See STEP 7 for the measurements and `protocol-spec.md` §2.1 and §2.7.1 for the
+   canonical statement. This matters because `0x64` is documented as the *Write Flash Save*
    command type, so a client following the doc will see every RAM dump reply as if
    it were a flash-write opcode.
 
-6. **CONFIRMED — the device emits unsolicited `20 04` preset-sync frames.** Five
-   arrived unrequested during the flash-read step. Clients must demultiplex replies
+6. **CONFIRMED — the device emits unsolicited `20 04` preset-sync frames.** Six arrived
+   unrequested in the end-to-end run (`logs/log_all.txt`): one during the CAB-name read and
+   five during the flash-index-2 read. More arrived in the per-step runs — five in
+   `logs/log_flash.txt`, two in `logs/log_generic.txt`. Clients must demultiplex replies
    rather than assuming the next inbound message answers the last request. (Whether
    these are self-initiated by the pedal or triggered by the concurrently running
    M-EFCS GUI was not isolated — see open questions.)
@@ -669,10 +762,15 @@ algorithm difference.
    The reference encoder's unconditional trailing push makes 7 → 9. It does not affect
    any packet used here. Test: encode a 7-byte buffer and count.
 
-9. **Unresolved from the task brief — `memory_map.md` calls amp captures `.am4`**,
-   while the user's library holds `.am2` / `.am3Data`. Nothing in the wire protocol
-   touches the file extension, so this validation neither confirms nor refutes it.
-   Flagged as a doc inconsistency, not a fact.
+9. **`memory_map.md` calls amp captures `.am4` — out of scope here, and settled
+   elsewhere.** Nothing in the wire protocol touches file extensions, so this session
+   neither confirms nor refutes it. It has since been settled by file evidence rather than
+   wire evidence: the record magic `AM4\0` is real and confirmed in factory data
+   (`capture-format-spec.md` §4.2), AM2/AM3/AM4 are firmware generations
+   (`official-docs.md` §5), and only the *file extension* `.am4` remains unobserved. The
+   upstream document is incomplete rather than wrong. Whether *this* pedal can load AM4
+   depends on its firmware version, which is **UNRESOLVED** — see the note added to the open
+   questions below.
 
 ---
 
@@ -685,12 +783,28 @@ algorithm difference.
   characters, is untested.
 * Whether the unsolicited `20 04` frames are pedal-initiated or a side effect of
   M-EFCS polling concurrently was not isolated (M-EFCS was left untouched by
-  instruction).
-* No write path of any kind was tested, by design.
+  instruction). Test: repeat the session with M-EFCS closed.
+* **The pedal's firmware version was never read, and it is UNRESOLVED.**
+  `official-docs.md` §5 infers V19 from the filename of a firmware file sitting on disk and
+  concludes the device therefore supports AM2 and AM3 but not AM4; four preset documents
+  independently record the M-EFCS connection label as `BLACKBOX v20`. The two may not be
+  comparable — the label may be a product name rather than a firmware version — so neither
+  should be repeated as fact. The read-only `0x11` query (`00 59 11 00 00 00 FF`) would
+  settle it in one frame, but it was outside the four-command allowlist in force for this
+  session, and `blackboxctl`'s gate refuses it for the same reason. The device's own
+  settings screen would also settle it.
+* Whether flash indices above 40 answer. The highest index read here is 40; 80 slots is a
+  vendor specification, not something this pedal has demonstrated. Reading index 79 and then
+  index 80 is read-only and cheap.
+* No write path of any kind was tested, by design. In consequence **the 8-byte ACK has never
+  been observed here**, and its payload byte's meaning stays disputed — see
+  `protocol-spec.md` §3.3.
 
 ## Safety record for this session
 
-Commands transmitted, in order, and nothing else:
+**Distinct commands transmitted, and nothing else.** Each was sent more than once across
+the seven preserved logs — **sixteen transmissions in total, all of them these seven
+literals**, in this order within the end-to-end run:
 
 ```
 00 59 23 08 00 00 04 00 00 00 10 5C 00 00 8F   Request RAM Dump
@@ -702,7 +816,22 @@ Commands transmitted, in order, and nothing else:
 00 59 23 08 00 00 04 60 0E 00 00 5C 00 00 31   Read Flash Preset index 40
 ```
 
-All seven use the `00 59 23` read header with command type `0x08`. The
-`assert_read_only()` gate in `midi_transport.py` was unit-tested to reject the
-`00 59 22` write header, command type `0x64`, command type `0x0A`, routing bytes
-other than `04`/`05`, and any packet with a bad checksum.
+All seven are opcode `0x23` (read) with an 8-byte payload — the `08` at offset 3 is
+that payload length, not a command type. They exercise **four command shapes** (RAM/RAM-word
+read, preset-sync read, string-block read, flash-preset read) across **five address bases**
+(§ "Address bases exercised in this session"), so "four read commands", "five address bases"
+and "seven literals" are three correct counts of the same session, not a disagreement.
+
+Transmission count per log, so "sixteen" can be re-derived: `log_all.txt` 7,
+`log_flash.txt` 3, `log_generic.txt` 2, `log_ram.txt` 1, `log_preset.txt` 1,
+`log_cab.txt` 1, `log_amp.txt` 1. The
+`assert_read_only()` gate in [`reference/midi_transport.py`](./reference/midi_transport.py)
+was unit-tested to reject the `00 59 22` write header, byte 3 values `0x64` and `0x0A`,
+byte 6 values other than `04`/`05`, and any packet with a bad checksum.
+
+The gate's own source calls byte 3 a "command type" and bytes 4–6 a "routing" field, which
+are the names of the **retired** upstream field model (`protocol-spec.md` §2.7.1). Its
+*behaviour* is unaffected — it accepts and rejects exactly the same bytes either way, since
+for these seven frames byte 3 is the length low byte `0x08` and byte 6 is the space
+selector — but do not read those names as the field model. See
+[`reference/README.md`](./reference/README.md).

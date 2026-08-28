@@ -1,5 +1,16 @@
 # Green Day `Boulevard of Broken Dreams` BlackBox Presets Design
 
+> ## SUPERSEDED — HISTORY ONLY.
+>
+> This design specifies P04-P05 using the BlackBox's **built-in amp models**. That approach
+> was abandoned on 2026-08-28 in favour of community capture files plus third-party IRs.
+> The values here were written to the device on 2026-07-26 and, as far as the record goes,
+> are still stored there, but they are no longer the target. Kept because it is the only
+> record of why P04/P05 are a section pair and which two alternative approaches were
+> rejected. Current design:
+> [`presets/boulevard-of-broken-dreams.md`](../../../presets/boulevard-of-broken-dreams.md).
+> Tone source policy: [`presets/library.md`](../../../presets/library.md).
+
 ## Goal
 
 Create two section-specific accompaniment presets for Green Day's `Boulevard of Broken Dreams` on the connected M-VAVE BlackBox:

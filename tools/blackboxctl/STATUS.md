@@ -15,22 +15,27 @@ not from a live read taken today.
 
 ## Works today, verified on hardware
 
-Verified in the 2026-08-28 session, by the predecessor module
-`scratchpad/proto/midi_transport.py`. Every command in that session was
-read-only; no `00 59 22` frame and no command type `0x64` was ever transmitted.
+Verified in the 2026-08-28 session, by the predecessor module now preserved at
+`docs/reverse-engineering/reference/midi_transport.py` (it was written to a
+session-scoped scratchpad that no longer exists). Every command in that session
+was read-only; no `00 59 22` write frame was ever transmitted.
 
 | Capability | How it was verified |
 | :--- | :--- |
 | Base-128 codec | 340-byte SysEx from the device decoded to a checksum-valid 295-byte frame; a second, independently sourced implementation agreed bit for bit on 299 random buffers and on all 13 captured messages |
 | Frame model `magic \| length LE16 \| space LE16 \| address LE32 \| size LE24 \| payload \| cs` | fits 7 transmitted requests and 7 unique reply frames with no exceptions |
 | Inbound checksum sums from **offset 5** | offset 5 validates 7/7 unique replies, offset 4 validates 5/7, failing on exactly the two name blocks (`byte[4] == 0x01`) |
-| All four read commands | the pedal answered every one; the byte literals are locked in `tests/test_frames.py` |
+| All four read commands | the pedal answered every one; the byte literals are locked in `tests/test_frames.py`. Three counts are all correct and are not the same count: **four read command shapes**, **five address bases**, **seven transmitted byte literals** (sixteen transmissions across the seven preserved logs) |
 | 92-byte preset memory map | seven P41 values known independently from the M-EFCS GUI (amp, gain, cab, chorus mix, reverb mix, delay off, volume) all matched the decode |
 | `address = preset_index * 92`, 0-based | flash index 2 returned a payload byte-identical to the live RAM dump, and preset-sync reported the active preset as `0x02` |
 | 20 amp + 20 IR slot names, 14-byte stride | all 40 read back; the 9 already known from the GUI matched character for character |
-| The device emits unsolicited `0x20000000` frames | 5 arrived unrequested during the flash-read step; replies must be routed by address, not arrival order |
+| The device emits unsolicited `0x20000000` frames | six arrived unrequested in the end-to-end run (`logs/log_all.txt`: one during the CAB-name read, five during the flash-index-2 read), and more in the per-step runs (`log_flash.txt` five, `log_generic.txt` two); replies must be routed by address, not arrival order |
 
-**Verified today, offline, in this tree:** 221 tests pass. The fixtures are the
+**Verified offline in this tree, 2026-08-28:** `python -m pytest` reports
+`221 passed` (Python 3.14.3, pytest 9.1.1, installed into a throwaway virtualenv
+because no `pytest` is present on this machine's `PATH`). An earlier revision of
+this line quoted 221 from the untracked `.pytest_cache`; the figure is now from a
+real run. The fixtures are the
 real recorded bytes, so `tests/test_decode_preset.py` replays P01, P03, P41 and
 the live RAM dump against the values recorded from the GUI, and
 `tests/test_device_replay.py` runs the whole `device` command path —
@@ -52,8 +57,8 @@ those same recorded replies.
 | **`PRESET_COUNT = 80`** | Evidence is a vendor PDF and bbedit's `app.js:227`. The highest flash index ever read here is 40. Relabelled HYPOTHESIS. |
 | **Every write path** | See below. Nothing has ever been written to this pedal. |
 | **Whether the device accepts an `am2converter` `00 00 32 00` magic** | Untested. `am2.go:14`'s `InitData` is literally `{0, 0, 50, 0, ...}` and matches those 60 header bytes exactly, so the header was *written* that way, not corrupted — but whether M-EFCS/V19 loads it is unknown. Treated as a warning, not a refusal, because a hard refusal would overstate the evidence and would block 4 of the files `presets/library.md` requires. |
-| **Whether a V19 pedal tolerates a 7868-byte AM4 record, or a 32-bit-float IR** | Untested. Both are warnings. The float case is not speculative in one direction: the pedal's own CAB slot 10 IR, `10SoldSC412.wav`, *is* 32-bit float, so refusing it would condemn a file the device is demonstrably running. |
-| **`ACK_FRAME`** | Documented as 8 bytes, which is shorter than the confirmed 15-byte minimum, so it does not fit the field model at all. Never observed, because no write was ever sent. |
+| **Whether a V19 pedal tolerates a 7868-byte AM4 record, or a 32-bit-float IR** | Untested. Both are warnings. The float case is not speculative in one direction: the *source* file for the pedal's own CAB slot 10, `10SoldSC412.wav`, is 32-bit IEEE float, so refusing that format would condemn a file the vendor itself ships. Note the limit of that argument — the on-device `CAB` record is 24-bit PCM (`capture-format-spec.md` §7.1), so this says the vendor's source set is non-conforming, not that the pedal runs float. See `presets/library.md`, "What that does and does not prove". |
+| **`ACK_FRAME`** | Documented as 8 bytes and never observed, because no write was ever sent. An earlier revision of this line said it "does not fit the field model at all" and guessed at an upstream transcription error. That was wrong: the 8-byte ACK parses cleanly under the general frame grammar (`cmd 0x00`, length 1, payload `00`, checksum `FF` — `protocol-spec.md` §2.5), and the 15-byte minimum this tool enforces is the `0x22`/`0x23` **specialisation**, not the grammar. The consequence is real but latent: `parse_frame` would reject a genuine ACK. Unreachable today because no write path can transmit. See contradiction-register C05. |
 
 ## Blocked, and on what
 
@@ -92,6 +97,16 @@ Separately, the three commands with real side effects on disk — `library
 install`, `library restart-editor` and `rename --in-place` — are dry runs by
 default and require `--yes`, and `install --force` copies the incumbent file to a
 timestamped `.bak` before replacing it.
+
+**One read-only command is deliberately excluded.** Opcode `0x11`, the device
+name/version query (`00 59 11 00 00 00 FF`), carries a zero-length payload and is
+harmless, but `assert_read_only` accepts only the `00 59 23` header, so the gate
+refuses it. That is a deliberate narrowing to the frame shapes this pedal has
+actually answered, not an oversight — recorded here because `0x11` is also the
+cheapest way to settle the pedal's firmware version, which is unresolved. See
+`docs/reverse-engineering/contradiction-register.md` C30 and
+`docs/reverse-engineering/protocol-algorithms.md` §8 item 8. Widening the gate is
+a code change and has not been made.
 
 ## The single cheapest next step to unlock verified flash writes
 

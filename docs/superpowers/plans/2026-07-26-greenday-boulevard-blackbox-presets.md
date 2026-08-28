@@ -1,5 +1,25 @@
 # Green Day `Boulevard of Broken Dreams` BlackBox Presets Implementation Plan
 
+> ## SUPERSEDED — HISTORY ONLY. DO NOT EXECUTE.
+>
+> This plan was fully executed on 2026-07-26. Every unchecked `- [ ]` below is done, not
+> pending, and Tasks 2 and 3 already wrote P04 and P05 to the device. Two commits record it:
+> `1c0a85d` (this plan and its spec) on `main`, and `da7aee9`
+> (`feat: document Boulevard BlackBox presets`, which adds
+> `presets/boulevard-of-broken-dreams.md` — Task 4 Step 6) on the branch
+> `codex/greenday-boulevard-presets`. **`da7aee9` was never merged into `main` or into this
+> branch, so `git show da7aee9` fails in a clone that has only `main`.** The preset file on
+> this branch is the later capture-based rewrite from `27b2042`.
+>
+> Note that `docs/staleness-register.md` A2 and A3 originally concluded that this plan was
+> never executed and that its completion commit does not exist. Both are refuted by
+> `git log --all`; A3 carries the correction. Its goal — presets built from the BlackBox's **built-in amp models** — was
+> later abandoned: presets are now built from community capture files plus third-party IRs.
+> See [`presets/boulevard-of-broken-dreams.md`](../../../presets/boulevard-of-broken-dreams.md)
+> for the current targets and [`presets/library.md`](../../../presets/library.md) for the
+> tone source policy. The current project phase sends **nothing** to the pedal, not even
+> reads.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Store a clean tremolo verse preset in P04 and a British chorus-crunch preset in P05 without changing P01-P03 or P41.

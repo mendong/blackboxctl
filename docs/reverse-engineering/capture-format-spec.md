@@ -22,8 +22,16 @@ https://github.com/jvsobrinho/mvave-blackbox-ble, and on `am2manager` by Walter 
 Code written from this specification is derived from GPL-3.0 reference logic elsewhere in
 this project and should be licensed GPL-3.0.
 
-M-VAVE and CUVAVE are trademarks of Zhuhai Shengke Intelligent Technology Co., Ltd. This
-is independent interoperability research on hardware and files the user owns.
+M-VAVE and CUVAVE are trademarks of their owner. Two forms of that owner's name appear in
+the vendor material used across this project — "Zhuhai Shengke Intelligent Technology Co.,
+Ltd." (quoted here and in `protocol-spec.md`) and "Zhuhai Rich Technology" (the address on
+the vendor's own ANN white paper, quoted in `official-docs.md` §5). **Neither has been
+verified against a corporate registry and they are not obviously the same entity**; treat
+both as unconfirmed. This is independent interoperability research on hardware and files the
+user owns.
+
+Start at [`README.md`](./README.md) in this directory for the reading order and the
+consolidated confidence summary.
 
 ### Evidence labels
 
@@ -39,10 +47,18 @@ is independent interoperability research on hardware and files the user owns.
 | `Black_Box_Captures_V16.8` pack (recursive) | 384 | 1249 | 1 zero-byte file |
 | **total** | **388** | **1298** | **1** |
 
+Naming note: `Black_Box_Captures_V16.8` is the *extracted directory*. `presets/library.md`
+and `docs/sources.md` refer to the same artefact by its archive name,
+`ANN_Captures_IRs_V16.8.zip` (44.3 MB). One community pack, two names. Neither its SHA-256
+nor a per-file manifest was recorded, and its only host is a mutable Google Drive folder, so
+**the install is not currently reproducible** — see `docs/sources.md` §2.1.
+
 1686 parseable records, **741 distinct 1536-float payloads**, 786 distinct whole files.
-A read-only copy lives at
-`…/ab32803c-…/scratchpad/fmt2/corpus/`. Reference parser:
-`…/ab32803c-…/scratchpad/fmt2/amx.py`.
+Reference parser: [`reference/amx.py`](./reference/amx.py), preserved into the repository —
+see [`reference/README.md`](./reference/README.md). The read-only corpus copy it was run
+against lived at `…/ab32803c-…/scratchpad/fmt2/corpus/` in a session-scoped temporary
+directory and **has not been preserved**; it was a copy of the community pack plus the
+M-EFCS library, both of which still exist at their own locations.
 
 ---
 
@@ -126,8 +142,19 @@ All multi-byte numbers are **little-endian**. Offsets are from the start of the 
   2000.0 as `float32`).
 * `0x1C`/`0x1D` etc. take only `{00,33,66,9a,cd}` / `{00,33,66,99,cc}` — the mantissa tails
   of values that are multiples of 0.1 dB. Again `float32`, not integers.
-* `0x12`–`0x15` are single bytes whose values top out at 100/200/90/53 — `uint8`, matching
-  `am2manager`'s `cp[0x12]=Mix; cp[0x13]=Level; cp[0x14]=GainMax; cp[0x15]=GainMin`.
+* `0x12`–`0x15` are single bytes — `uint8`, matching `am2manager`'s
+  `cp[0x12]=Mix; cp[0x13]=Level; cp[0x14]=GainMax; cp[0x15]=GainMin`. What establishes the
+  type is that all four stay within one byte and take few enough distinct values to be
+  scalars rather than parts of a wider field.
+
+  ⚠️ **Do not read maxima out of this bullet.** It originally said these four "top out at
+  100/200/90/53", which contradicts the offset table above (`level` 50–255, `gain_max`
+  40–100, `gain_min` 0–60) — 255 vs 200, 100 vs 90 and 60 vs 53 cannot both be corpus-wide
+  maxima for the same fields. The two passes evidently covered different subsets and the
+  discrepancy was never reconciled. **The offset table is the one to trust**, since it is
+  the one stated as a range over the full 1298-file header corpus; the figures here are
+  withdrawn rather than corrected, because nothing in this document establishes which subset
+  produced them. Re-derive from the corpus before quoting either.
 
 **CONFIRMED — `am2manager`'s `InitData` is exactly this header.** `InitData[24:28] =
 {0,0,200,66}` = `float32` 100.0 at `0x18`; `InitData[28:32] = {0,0,192,192}` = −6.0;
@@ -473,6 +500,28 @@ from 16-bit sources by bit replication, and decode identically either way.
 
 **1358 taps at 44.1 kHz = 30.8 ms.** That is the entire IR budget of the pedal.
 
+### Three IR length figures, reconciled
+
+Three numbers circulate in this project — 1024, 1358 and 2048 — and each was at some point
+labelled confirmed, which read as a contradiction. It is not one. They measure three
+different things:
+
+| Figure | What it actually is | Where |
+| ---: | :--- | :--- |
+| **1024** taps / 23.2 ms | The **vendor specification line**, from the Korean manual and the product copy. It is intent, not contract: the vendor's own factory content does not meet it. | `official-docs.md` §3 |
+| **1358** taps / 30.8 ms | What an **on-device `CAB` flash record physically holds**. This is the real ceiling and the figure a validator should warn against. | this section |
+| **2048** frames | The length of most **factory source `.wav` files** in the Mac-side M-EFCS library. Those are inputs to the upload path, not device storage. Measured across all twenty: sixteen are 2048 frames; 1AC-SeVin is 10000, 5HIFI_OK is 22026, 15JC120_BOX is 13230 and 10SoldSC412 is 1020. | `presets/library.md` |
+
+**The on-device figure outranks the others**, because it is the one that determines what
+survives. Wherever a threshold is quoted it should be 1358 taps / 30.8 ms, and it should
+name the vendor's 1024 alongside so a reader who has seen the spec line is not left
+wondering. `tools/blackboxctl/blackboxctl/captures.py` currently hard-codes `IR_TAPS = 1024`
+and warns from 23.2 ms, with a comment noting that 1024 is a documented figure rather than a
+validation requirement; that is a defensible conservative choice, but the code and §8.2 below
+warn at different thresholds derived from different sources, and they should be made to
+quote the same number and name the other. **Reported, not changed** — no code was modified,
+per the workspace rules in `AGENTS.md`.
+
 ---
 
 ## 8. Validating `.wav` impulse responses
@@ -493,27 +542,59 @@ CONFIRMED by parsing all 293 files in
 | extra chunks | `LIST`, `bext`, `iXML`, `_PMX`, `cart`, `id3 `, `cue `, `JUNK`, `LGWV`, `ResU` all present |
 | file size | 3044 – 432736 bytes |
 
+**The twenty factory IRs, broken out.** The table above mixes the vendor's own files with
+the user's installed ones. Measured separately by reading each `fmt ` chunk (read-only,
+2026-08-28), the twenty slot-prefixed factory files are:
+
+| Property | Factory subset (n = 20) |
+| :--- | :--- |
+| channels | mono, 20/20 |
+| sample rate | 44100 (15), **48000 (3** — 3V30_MD421, 4G12-EVH_CT, 11FD_TW1980**)**, **96000 (2** — 8FRMAN112, 14Recto_112**)** |
+| encoding | PCM 24-bit (18), PCM 32-bit integer (1 — 7VOX_AC30), IEEE float 32-bit (1 — 10SoldSC412) |
+| length | 2048 frames (16); 1020 (10SoldSC412), 10000 (1AC-SeVin), 13230 (15JC120_BOX), 22026 (5HIFI_OK) |
+
+This is the strongest single piece of evidence that the vendor's "44.1K/24Bit mono WAV,
+1024 sampling points" line is intent rather than contract: **five of the vendor's own twenty
+factory IRs violate the sample-rate half of it, and nineteen violate the length half.**
+Note also that two of the files carry a trailing space before the extension —
+`17AgSVT410 .wav` and `20Tace412 .wav` — which will break any restore tooling that looks
+them up by their slot-table name.
+
 **Important caveat on what this proves.** These files are present in M-EFCS's own
 `cabFile` library directory, so the application at minimum accepted them into its library.
 It does **not** prove the pedal loaded each one, because that was not observable without
 sending state-changing commands. Treat the table as "the importer tolerates this variety",
-HYPOTHESIS, not as "the device plays all of these", which is untested.
+HYPOTHESIS, not as "the device plays all of these", which is untested. The single
+demonstrated import of a non-conforming file, and the exact limits of what it proves, are
+stated once in `presets/library.md` under "What that does and does not prove"; every other
+document defers to it.
 
 ### 8.2 What a validator should warn about
 
 Ranked by how likely the user is to be surprised:
 
-1. **Length.** The device stores **1358 taps at 44.1 kHz (30.8 ms)**. 285 of the 293 IRs in
-   the library are longer than that and are necessarily truncated on import. Warn above
-   30.8 ms; warn loudly above ~100 ms, where a reverb tail is clearly being discarded.
+1. **Length.** The device stores **1358 taps at 44.1 kHz (30.8 ms)** — §7.1, measured from
+   the on-device record. 285 of the 293 IRs in the library are longer than that and are
+   necessarily truncated on import. Warn above 30.8 ms; warn loudly above ~100 ms, where a
+   reverb tail is clearly being discarded. When reporting this to a user, name the vendor's
+   published figure too — 1024 taps / 23.2 ms — and say which is which, or the two numbers
+   look like a contradiction. See the reconciliation table in §7.1.
 2. **Sample rate ≠ 44100.** The DSP runs at 44.1 kHz (CONFIRMED from the 44100-iteration
    sweep in `calc_bias_gru`). 48 kHz and 96 kHz files must be resampled by the host; a
    1024-tap 48 kHz IR becomes ~941 taps at 44.1 kHz. Warn, and state the resampled length.
+   Warn, but do not refuse: **five of the pedal's own twenty factory IRs are not 44.1 kHz** —
+   3V30_MD421, 4G12-EVH_CT and 11FD_TW1980 at 48 kHz, 8FRMAN112 and 14Recto_112 at 96 kHz —
+   so the vendor does not hold its own content to the published spec line.
 3. **Stereo.** 32 library files are stereo. The cab slot holds one mono channel. Warn that
    a channel will be dropped or summed, and say which.
 4. **Bit depth other than 24.** The on-device format is 24-bit signed. 16-bit input loses
    nothing that matters; 32-bit float input can exceed ±1.0 and will clip. Warn if any
-   sample of a float file exceeds ±1.0.
+   sample of a float file exceeds ±1.0. Determine float-vs-integer from the `fmt ` chunk's
+   `wFormatTag` (1 = PCM, 3 = IEEE float), **not** from bit depth alone: Python's `wave`
+   module reports `sampwidth == 4` for both and cannot tell them apart. The single IEEE-float
+   file in this library is the factory `10SoldSC412.wav` (tag 3, 32-bit, 1020 frames); the
+   single 32-bit *integer* file is the factory `7VOX_AC30.wav` (tag 1, 32-bit, 2048 frames).
+   Those two have been confused elsewhere in this repository for exactly this reason.
 5. **Non-normalised peak.** The device format is fixed-point with hard headroom at ±2²³.
    Warn if the peak is below −20 dBFS (the IR will be too quiet after truncation) or at
    exactly 0 dBFS with more than a handful of samples at full scale (already clipped).
@@ -557,11 +638,35 @@ Implemented in `amx.py`. Errors reject the file; warnings inform.
 
 **Deliberately *not* a rule:** there is no checksum to verify (§5).
 
+**Note on the `magic looks like InitData damage` count.** §1 and §6.1 count **322** files
+with a corrupt magic; the warning row above says **321**. Both are right and the split is
+worth stating: the warning fires only on the `00 00 xx 00` family (321 files), while the
+error-side count also includes one file whose magic is `2f 0b 32 00`, which is damaged but
+not `InitData`-shaped. 321 + 1 = 322.
+
+### The shipped tool does not implement these rules exactly
+
+`tools/blackboxctl` deliberately diverges, and the difference is a policy choice rather than
+a defect on either side. Two of the errors above are demoted to **warnings** there:
+
+* **Corrupt magic** is a warning, not a refusal. A hard refusal would block four of the
+  capture files that `presets/library.md` requires for its amp slot map, and those files play
+  correctly once installed. With the demotion, all 39 `ampFile` entries parse; under the
+  rules as written above, six amp files and one IR were refused.
+* **The IR format rules** in §8.2 are advisory there for the same reason — the pedal's own
+  factory content does not satisfy them (§8.1).
+
+Both policies are defensible; two rule sets standing unreconciled is not, which is why this
+is recorded here. If a validator is ever meant to be strict, §9 is the strict rule set and
+`tools/blackboxctl/STATUS.md` records what the tool actually enforces.
+
 ---
 
 ## 10. Reference parser
 
-`…/ab32803c-…/scratchpad/fmt2/amx.py` — pure Python 3, no third-party imports.
+[`reference/amx.py`](./reference/amx.py) — pure Python 3, no third-party imports. Preserved
+as an artefact, not maintained; the supported tool is `tools/blackboxctl`, whose validation
+policy differs from §9 in the ways recorded there.
 
 ```
 parse(path)            -> Capture (magic, name, mix/level/gain, 3 EQ triples, 1536 floats,

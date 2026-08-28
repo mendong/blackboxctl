@@ -1,0 +1,77 @@
+[MIDI] destination ref=241655833 display='USB Composite Device' mfr='Jieli Technology'
+[MIDI] source      ref=241655832 display='USB Composite Device' mfr='Jieli Technology'
+=== STEP 6: Read Flash Preset index 0 (P01), address 0 ===
+[OUT RAW  ] flash preset 0 00 59 23 08 00 00 04 00 00 00 00 5C 00 00 9F
+[OUT SYSEX] F0 00 32 0D 41 00 00 00 02 00 00 00 00 40 0B 00 00 1F 01 F7
+[OUT DONE ] complete=True remaining=0 in 0.012s
+[IN  SYSEX 0] (125B) F0 00 32 0D 21 06 00 00 02 00 00 00 00 40 0B 00 00 55 00 04 28 20 00 01 00 03 02 04 08 10 20 40 00 02 02 00 18 00 40 42 02 00 46 00 38 03 40 0C 00 00 00 00 00 10 03 00 23 00 5A 00 38 03 60 0B 00 00 00 50 00 40 02 00 05 00 00 00 00 00 00 00 00 12 00 18 00 60 00 00 00 00 00 00 00 00 00 07 00 14 00 70 01 50 05 40 16 00 00 00 30 04 00 06 00 64 00 00 00 00 00 00 00 00 14 03 F7
+[IN  RAW   0] (107B) 00 59 23 64 00 00 04 00 00 00 00 5C 00 00 55 00 01 05 02 04 00 03 01 01 01 01 01 01 02 01 00 03 00 0A 05 00 23 00 37 00 32 00 00 00 00 00 19 00 46 00 2D 00 37 00 2F 00 00 00 14 00 14 00 0A 00 00 00 00 00 00 00 12 00 06 00 06 00 00 00 00 00 00 00 1C 00 14 00 3C 00 2D 00 2D 00 00 00 46 00 18 00 64 00 00 00 00 00 00 00 CA
+  -> decoded length 107
+--- decode flash preset 0 payload d[14:106] (92 bytes) ---
+  raw92 55 00 01 05 02 04 00 03 01 01 01 01 01 01 02 01 00 03 00 0A 05 00 23 00 37 00 32 00 00 00 00 00 19 00 46 00 2D 00 37 00 2F 00 00 00 14 00 14 00 0A 00 00 00 00 00 00 00 12 00 06 00 06 00 00 00 00 00 00 00 1C 00 14 00 3C 00 2D 00 2D 00 00 00 46 00 18 00 64 00 00 00 00 00 00 00
+  [00] patch volume      = 85 (hi byte 0)
+  [02] routing           = ['AMP', 'CAB', 'MOD', 'REV', 'FX', 'DLY']  raw 01 05 02 04 00 03
+  [08] on/off            = FX=ON, AMP=ON, MOD=ON, DLY=ON, REV=ON, CAB=ON
+  [0E] models            = FX=2(Compress) AMP=1 MOD=0(Chorus) DLY=3(Dual) REV=0(Room) CAB=10
+  [14] FX  knobs      = k1=5, k2=35, k3=55, k4=50, k5=0, k6=0
+  [20] AMP knobs      = Gain=25, Level=70, Bass=45, Mid=55, Treble=47, -=0
+  [2C] MOD knobs      = Speed=20, Depth=20, Mix=10, k4=0, k5=0, -=0
+  [38] DLY knobs      = Time=18, FB=6, Mix=6, k4=0, k5=0, k6=0
+  [44] REV knobs      = Decay=28, Mix=20, HP=60, LP=45, k5=45, -=0
+  [50] CAB knobs      = Level=70, L-Cut=24, H-Cut=100, -=0, -=0, -=0
+
+=== STEP 6: Read Flash Preset index 2 (P03), address 184 ===
+[OUT RAW  ] flash preset 2 00 59 23 08 00 00 04 B8 00 00 00 5C 00 00 E7
+[OUT SYSEX] F0 00 32 0D 41 00 00 00 02 38 01 00 00 40 0B 00 00 67 01 F7
+[OUT DONE ] complete=True remaining=0 in 0.012s
+[IN  SYSEX 0] (125B) F0 00 32 0D 21 06 00 00 02 38 01 00 00 40 0B 00 00 55 00 00 08 50 40 00 02 03 02 04 00 00 20 40 00 02 04 00 18 10 00 41 0A 00 6A 00 50 03 40 0C 00 00 00 00 00 70 02 40 21 00 56 00 70 02 40 0F 00 00 00 70 01 20 06 00 24 00 00 00 00 00 00 00 00 54 00 3C 01 70 01 00 00 00 00 00 00 00 40 02 00 0F 00 40 01 10 06 00 0F 00 00 00 20 04 40 05 00 64 00 00 00 00 00 00 00 00 5C 00 F7
+[IN  RAW   0] (107B) 00 59 23 64 00 00 04 B8 00 00 00 5C 00 00 55 00 00 01 05 02 04 03 01 01 00 00 01 01 02 02 00 03 01 04 15 00 35 00 3A 00 32 00 00 00 00 00 17 00 43 00 2B 00 2E 00 3E 00 00 00 3C 00 32 00 48 00 00 00 00 00 00 00 54 00 2F 00 0F 00 00 00 00 00 00 00 0A 00 0F 00 30 00 31 00 1E 00 00 00 44 00 16 00 64 00 00 00 00 00 00 00 2E
+[IN  SYSEX 1] (24B) F0 00 32 0D 61 00 00 00 02 00 00 00 00 42 00 00 00 02 04 00 00 30 1A F7
+[IN  RAW   1] (19B) 00 59 23 0C 00 00 04 00 00 00 20 04 00 00 02 02 00 00 D3
+[IN  SYSEX 2] (24B) F0 00 32 0D 61 00 00 00 02 00 00 00 00 42 00 00 00 02 04 00 00 30 1A F7
+[IN  RAW   2] (19B) 00 59 23 0C 00 00 04 00 00 00 20 04 00 00 02 02 00 00 D3
+[IN  SYSEX 3] (24B) F0 00 32 0D 61 00 00 00 02 00 00 00 00 42 00 00 00 02 04 00 00 30 1A F7
+[IN  RAW   3] (19B) 00 59 23 0C 00 00 04 00 00 00 20 04 00 00 02 02 00 00 D3
+[IN  SYSEX 4] (24B) F0 00 32 0D 61 00 00 00 02 00 00 00 00 42 00 00 00 02 04 00 00 30 1A F7
+[IN  RAW   4] (19B) 00 59 23 0C 00 00 04 00 00 00 20 04 00 00 02 02 00 00 D3
+[IN  SYSEX 5] (24B) F0 00 32 0D 61 00 00 00 02 00 00 00 00 42 00 00 00 02 04 00 00 30 1A F7
+[IN  RAW   5] (19B) 00 59 23 0C 00 00 04 00 00 00 20 04 00 00 02 02 00 00 D3
+  -> decoded length 107
+--- decode flash preset 2 payload d[14:106] (92 bytes) ---
+  raw92 55 00 00 01 05 02 04 03 01 01 00 00 01 01 02 02 00 03 01 04 15 00 35 00 3A 00 32 00 00 00 00 00 17 00 43 00 2B 00 2E 00 3E 00 00 00 3C 00 32 00 48 00 00 00 00 00 00 00 54 00 2F 00 0F 00 00 00 00 00 00 00 0A 00 0F 00 30 00 31 00 1E 00 00 00 44 00 16 00 64 00 00 00 00 00 00 00
+  [00] patch volume      = 85 (hi byte 0)
+  [02] routing           = ['FX', 'AMP', 'CAB', 'MOD', 'REV', 'DLY']  raw 00 01 05 02 04 03
+  [08] on/off            = FX=ON, AMP=ON, MOD=off, DLY=off, REV=ON, CAB=ON
+  [0E] models            = FX=2(Compress) AMP=2 MOD=0(Chorus) DLY=3(Dual) REV=1(Hall) CAB=4
+  [14] FX  knobs      = k1=21, k2=53, k3=58, k4=50, k5=0, k6=0
+  [20] AMP knobs      = Gain=23, Level=67, Bass=43, Mid=46, Treble=62, -=0
+  [2C] MOD knobs      = Speed=60, Depth=50, Mix=72, k4=0, k5=0, -=0
+  [38] DLY knobs      = Time=84, FB=47, Mix=15, k4=0, k5=0, k6=0
+  [44] REV knobs      = Decay=10, Mix=15, HP=48, LP=49, k5=30, -=0
+  [50] CAB knobs      = Level=68, L-Cut=22, H-Cut=100, -=0, -=0, -=0
+  -> decoded length 19
+  -> decoded length 19
+  -> decoded length 19
+  -> decoded length 19
+  -> decoded length 19
+
+=== STEP 6: Read Flash Preset index 40 (P41), address 3680 ===
+[OUT RAW  ] flash preset 40 00 59 23 08 00 00 04 60 0E 00 00 5C 00 00 31
+[OUT SYSEX] F0 00 32 0D 41 00 00 00 02 60 1C 00 00 40 0B 00 00 31 00 F7
+[OUT DONE ] complete=True remaining=0 in 0.012s
+[IN  SYSEX 0] (125B) F0 00 32 0D 21 06 00 00 02 60 1C 00 00 40 0B 00 00 55 00 04 28 20 00 01 00 03 02 04 08 00 20 40 00 02 00 00 18 00 40 41 07 00 46 00 38 03 60 0D 00 00 00 00 00 50 05 00 23 00 50 00 70 03 00 0F 00 00 00 50 00 60 02 00 06 00 00 00 00 00 00 00 00 29 00 78 00 50 03 40 03 00 64 00 10 03 20 06 00 0C 00 70 01 70 06 40 07 00 00 00 58 04 40 06 00 64 00 00 00 00 00 00 00 00 26 02 F7
+[IN  RAW   0] (107B) 00 59 23 64 00 00 04 60 0E 00 00 5C 00 00 55 00 01 05 02 04 00 03 01 01 01 00 01 01 02 00 00 03 00 06 0F 00 23 00 37 00 37 00 00 00 00 00 2D 00 46 00 28 00 3E 00 3C 00 00 00 14 00 16 00 0C 00 00 00 00 00 00 00 29 00 1E 00 1D 00 07 00 32 00 32 00 19 00 0C 00 3C 00 37 00 0F 00 00 00 4B 00 1A 00 64 00 00 00 00 00 00 00 93
+  -> decoded length 107
+--- decode flash preset 40 payload d[14:106] (92 bytes) ---
+  raw92 55 00 01 05 02 04 00 03 01 01 01 00 01 01 02 00 00 03 00 06 0F 00 23 00 37 00 37 00 00 00 00 00 2D 00 46 00 28 00 3E 00 3C 00 00 00 14 00 16 00 0C 00 00 00 00 00 00 00 29 00 1E 00 1D 00 07 00 32 00 32 00 19 00 0C 00 3C 00 37 00 0F 00 00 00 4B 00 1A 00 64 00 00 00 00 00 00 00
+  [00] patch volume      = 85 (hi byte 0)
+  [02] routing           = ['AMP', 'CAB', 'MOD', 'REV', 'FX', 'DLY']  raw 01 05 02 04 00 03
+  [08] on/off            = FX=ON, AMP=ON, MOD=ON, DLY=off, REV=ON, CAB=ON
+  [0E] models            = FX=2(Compress) AMP=0 MOD=0(Chorus) DLY=3(Dual) REV=0(Room) CAB=6
+  [14] FX  knobs      = k1=15, k2=35, k3=55, k4=55, k5=0, k6=0
+  [20] AMP knobs      = Gain=45, Level=70, Bass=40, Mid=62, Treble=60, -=0
+  [2C] MOD knobs      = Speed=20, Depth=22, Mix=12, k4=0, k5=0, -=0
+  [38] DLY knobs      = Time=41, FB=30, Mix=29, k4=7, k5=50, k6=50
+  [44] REV knobs      = Decay=25, Mix=12, HP=60, LP=55, k5=15, -=0
+  [50] CAB knobs      = Level=75, L-Cut=26, H-Cut=100, -=0, -=0, -=0
+

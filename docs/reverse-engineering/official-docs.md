@@ -192,10 +192,22 @@ column alignment is exact. Blank CAB cells are blank in the source.
 | P20 | 15JVM | 4G12-EVH_CT | | P40 | 18PjBuddy_BS | *(blank)* |
 
 **This table is a free, no-write validation oracle** for the Read Flash Preset command
-(`00 59 23 08 00 00 04 [ADDR_4B_LE] 5C 00 00 [CS]`, address = index × 92): read slot 0
-and check that its AMP model id decodes to `1J900_CL` and its CAB id to `1AC-SeVin`.
-If the decoded model ids for P01–P40 match this table, the 92-byte memory map is
-validated without ever writing.
+(`00 59 23 08 00 00 04 [ADDR_4B_LE] 5C 00 00 [CS]`, address = index × 92) — **but only on
+slots that have never been edited.**
+
+⚠️ **The check this section originally proposed does not work on this device.** It said to
+read slot 0 and confirm AMP `1J900_CL` / CAB `1AC-SeVin`. Slot 0 was read on 2026-08-28 and
+decoded to AMP `FD_CL` and CAB `FD_TW1980` (`device-validation.md` STEP 6a), because P01 was
+overwritten through the GUI in July. Anyone running the proposed check would wrongly conclude
+the 92-byte memory map is broken. **P01–P05 and P41 are all known-edited here**, and
+`presets/hana.md` shows P01's amp was already off-factory before July. Restrict the oracle
+to P06–P40 on this unit, and check `presets/` for the edit history before relying on it
+anywhere.
+
+The memory map does not need this oracle any more. It was confirmed on 2026-08-28 by a
+stronger route: P41 matched all seven values known from the GUI, and P01 and P03 matched
+every field independently recorded in `presets/hana.md` — roughly forty fields across three
+presets. `device-validation.md` STEP 6.
 
 ### 2.1 Official AMP names (20) — matches the AMP name string block
 
@@ -226,9 +238,13 @@ Note the manual claims 1–15 guitar CAB, 16–20 bass CAB; the official list's 
 
 ---
 
-## 3. IR .wav limits — this settles the truncation question
+## 3. IR .wav limits — what the vendor publishes
 
-**CONFIRMED. The BlackBox accepts 44.1 kHz / 24-bit / MONO WAV, 1024 sampling points.**
+**CONFIRMED as a published specification: the vendor states 44.1 kHz / 24-bit / mono WAV,
+1024 sampling points.** This section originally claimed to settle the truncation question.
+It settles only half of it — that long IRs are truncated, which is true. It does **not**
+establish the truncation point, and the 1024 figure is not the number a validator should
+use. See the reconciliation immediately after the three statements below.
 
 Three independent official statements:
 
@@ -242,9 +258,24 @@ Three independent official statements:
    notes the sibling **IR BOX** supports "1024/2048 sampling point IR files" — i.e. 1024
    is a real per-product limit, not boilerplate.
 
-**Consequence: 1024 taps at 44.1 kHz = 23.2 ms of impulse response.** Anything longer
-is truncated. A typical 500 ms commercial IR (22050 samples) keeps only its first 4.6%.
-This is the answer to "are long IRs truncated": yes, hard, at 1024 samples.
+**The vendor's stated consequence: 1024 taps at 44.1 kHz = 23.2 ms.** Long IRs are
+truncated, hard — that much is right, and it is the answer to "are long IRs truncated".
+
+⚠️ **But 1024 is intent, not contract, and it is not the measured ceiling.** Two things
+contradict it, both measured rather than published:
+
+* **The on-device `CAB` flash record holds 1358 samples of 24-bit PCM = 30.8 ms**, measured
+  directly from the factory `*_ampCab.bin` blobs (`capture-format-spec.md` §7.1). That is
+  the real budget, and it is larger than the spec line.
+* **The vendor's own factory content does not meet its own spec.** Of the twenty factory IR
+  `.wav` files in the M-EFCS library, five are not 44.1 kHz (three at 48 kHz, two at 96 kHz)
+  and nineteen are not 1024 frames — sixteen are 2048 (`capture-format-spec.md` §8.1,
+  `presets/library.md`).
+
+So the three figures in circulation — 1024, 1358, 2048 — are not a contradiction; they
+measure the specification, the device record and the source files respectively. The
+reconciliation table is at `capture-format-spec.md` §7.1, and **a validator should warn at
+1358 taps / 30.8 ms and name the vendor's 1024 alongside it.**
 
 Related **CONFIRMED** IR CAB module parameters, Korean manual p.12:
 - Level
@@ -323,14 +354,34 @@ training-software changelog, verbatim:
 So the generation order is **AM2 → AM3 → AM4**, AM2 is deprecated and no longer
 trainable, and NAM (Neural Amp Modeler) files can be converted into AM3DATA/AM4DATA.
 
-### The operationally important consequence
+### The operationally important consequence — and it is UNRESOLVED
 
-**The pedal in this project runs V19 (2025-10-17). AM4 support arrives only in V20
-(2026-01-31). So this device supports AM2 and AM3 but NOT AM4.**
-This is **CONFIRMED** for the documentation; it is a **HYPOTHESIS (high confidence)**
-that the device on the desk is actually running V19 rather than V20 — that was inferred
-from the filename of the firmware file sitting next to the manual. *Test:* read the
-version over the proprietary protocol, or look at the device's settings screen.
+**CONFIRMED from the vendor's own release notes: AM4 support arrives in V20 (2026-01-31);
+V19 (2025-10-17) supports AM2 and AM3 but not AM4.** That much is documentary and solid.
+
+⚠️ **What this pedal actually runs is UNRESOLVED, and earlier revisions of this section
+overstated it.** It read "The pedal in this project runs V19 … So this device supports AM2
+and AM3 but NOT AM4", with the V19 part labelled a high-confidence hypothesis. The evidence
+on both sides:
+
+* **For V19:** the filename `BlackBox-V19-Firmware-2025-10-17.fwsc` of a firmware file
+  sitting on disk next to the manual. This is an inference from a filename — it shows a V19
+  image was downloaded, not that it was flashed, and not that nothing later was flashed
+  afterwards.
+* **For V20:** four documents in this repository — `AGENTS.md`, `presets/library.md`,
+  `presets/hana.md` and `presets/boulevard-of-broken-dreams.md` — independently record the
+  M-EFCS connection label as **`BLACKBOX v20`**.
+
+The two may not even be comparable: `BLACKBOX v20` may be a product or model designation
+rather than a firmware version, in which case neither refutes the other. **Stop repeating
+"this device is V19" as fact**, and do not conclude from it that AM4 captures are unloadable
+here. It decides whether AM4 material is usable, so it is worth settling.
+
+*Settling test, read-only and cheap:* the `0x11` device name/version query,
+`00 59 11 00 00 00 FF` — one frame, zero-length payload, ASCII reply
+(`protocol-algorithms.md` §8 item 8). Note that `blackboxctl`'s read-only gate currently
+refuses `0x11`, so it would need widening. The device's own settings screen would answer it
+with no protocol work at all.
 
 Also **CONFIRMED**: the vendor's own term for these captures is **ANN = "Audio Neural
 Network"**, from `ANN_whitepaper.pdf` p.1: "ANN(Audio Neural Network) is the latest
@@ -388,7 +439,7 @@ MIDI CONTROL CN" document links. ANNBLACKBOX carries only "Preset EN / Preset CN
 | Total effects | 60+ |
 | Simultaneous slots | 6+1, user-orderable |
 | Modules | FX → AMP → MOD → DLY → REV → CAB (order user-assignable) |
-| FX types | Noise Gate, Boost, Compressor (3) |
+| FX types | Noise Gate, Boost, Compressor (3) — **but see below; four since V17** |
 | MOD types | Chorus, Phaser, Tremolo, Flanger, Vibrato, Univibe, Auto Filter (7) |
 | DLY types | Analog, Ducking, dTape, Dual, Lofi (5) |
 | REV types | Room, Hall, Swell, Spring, Shimmer, Cloud (6) |
@@ -399,6 +450,13 @@ MIDI CONTROL CN" document links. ANNBLACKBOX carries only "Preset EN / Preset CN
 | Power / data | Type-C, 5V ≥ 300 mA |
 | I/O | 1/4" mono TS in, 1/4" mono TS out, 1/8" stereo (headphone) |
 | Software | Windows, macOS, iOS, Android |
+
+**FX count — the manual predates the fourth model.** The spec table above lists three FX
+types; `protocol-spec.md` §4.2 and `protocol-algorithms.md` §6 list four, from
+`bbedit.BLOCKS`: `00` Noise Gate++, `01` Boost, `02` Compress, `03` AI Gate MS. That is not
+a conflict, and §7.3 of this document already carries the explanation without connecting it:
+firmware **V17 (2025-06-06) added "AI Ms Gate"**. Four is correct for any firmware from V17
+onward; the manual describes an earlier build.
 
 **Doc bug worth knowing about:** Korean manual p.6 says
 `P01~P40은 공장 초기 일렉기타 프리셋, P36-P40은 베이스 기타 프리셋`
@@ -477,7 +535,7 @@ From the official release note:
 | — | 2024-12-05 | Master Knob now controls guitar volume only; BT/USB volume moves to the host |
 | — | 2024-12-28 | AI NATEC noise reduction; **AM3 model support**; 40% performance gain; USB sample-rate jitter fix |
 | V17 | 2025-06-06 | M-EFCS can audition AMP/IR/DS together; GATE gains "AI Ms Gate"; button debounce |
-| **V19** | **2025-10-17** | **The build in this project.** Boot speed, stability; tone-switch latency and switching-noise fix |
+| V19 | 2025-10-17 | Boot speed, stability; tone-switch latency and switching-noise fix. **A V19 image is on disk here, but which build this pedal actually runs is UNRESOLVED — see §5.** |
 | V20 | 2026-01-31 | **AM4 format support for AMP modules** |
 
 ---
@@ -487,11 +545,18 @@ From the official release note:
 1. **The safe control path is real and documented.** Use PC for preset switching and
    CC 0–5 for module toggles, over the USB MIDI endpoint CoreMIDI already exposes.
    Prefer it over the proprietary flash path for anything it can do.
-2. **1024 samples is the IR ceiling.** 23.2 ms. Long IRs are truncated. Stop wondering.
-3. **.am2 / .am3 / .am4 are generations, not a doc error.** V19 hardware takes AM2 and
-   AM3; AM4 needs V20.
-4. **The official amp, cab, and P01–P40 tables are a write-free validation oracle** for
-   the 92-byte preset memory map and the name string blocks.
+2. **Long IRs are truncated — but the ceiling is 1358 taps / 30.8 ms, not the published
+   1024 / 23.2 ms.** The 1024 figure is the vendor's spec line and its own factory content
+   does not meet it. §3, and the reconciliation at `capture-format-spec.md` §7.1.
+3. **.am2 / .am3 / .am4 are generations, not a doc error.** AM4 needs V20. **Which build
+   this pedal runs is UNRESOLVED**, so whether it takes AM4 is too. §5.
+4. **The official amp and cab name lists are confirmed** — all 40 names were read out of
+   this pedal's flash on 2026-08-28. All 20 AMP names and 19 of 20 CAB names match the
+   official lists position for position; CAB slot 1 returns `1ML_BEST_IR` because this
+   project overwrote it, so the vendor's `1AC-SeVin` is unverified against flash
+   (`device-validation.md` STEP 4–5). **The
+   P01–P40 table is a write-free oracle only for slots that have never been edited**; P01–P05
+   and P41 are edited on this unit and slot 0 does not match the table. §2.
 5. **The firmware is a JieLi AC791N container**, mostly opaque, with a clean V19↔V20 diff
    available as the next step if anyone needs to go further.
 6. **The Korean PDF in this repo is a Gopherwood SquareMoon rebrand manual**, same
@@ -502,11 +567,25 @@ From the official release note:
 ## Attribution and licensing
 
 - The user manuals, preset lists, release notes, ANN white paper, and MK300 MIDI mapping
-  table quoted here are © M-VAVE / Sinco / Cuvave (Zhuhai Rich Technology), retrieved
-  from `m-vave.com`, `community.m-vave.com`, and `yms-file-store.oss-cn-hongkong.aliyuncs.com`.
-  Quoted for interoperability documentation of the owner's own hardware.
-- The Korean manual is © 주식회사 고퍼우드 (Gopherwood Co., Ltd.), `gopherwood.co.kr`.
+  table quoted here are © M-VAVE / Sinco / Cuvave, retrieved from `m-vave.com`,
+  `community.m-vave.com`, and `yms-file-store.oss-cn-hongkong.aliyuncs.com`. Quoted for
+  interoperability documentation of the owner's own hardware.
+  **The corporate name is unconfirmed.** The ANN white paper gives the vendor address as
+  "Zhuhai Rich Technology", while `protocol-spec.md` and `capture-format-spec.md` name
+  "Zhuhai Shengke Intelligent Technology Co., Ltd." as the trademark owner. Neither was
+  verified against a corporate registry and they are not obviously the same entity; treat
+  both as unconfirmed until one is checked.
+- The Korean manual is © 주식회사 고퍼우드 (Gopherwood Co., Ltd.), `gopherwood.co.kr`. It is a
+  SquareMoon rebrand manual, **not an M-Vave document** — see §6.
 - Protocol context cross-referenced against
   <https://github.com/jvsobrinho/mvave-blackbox-ble> — documentation CC BY-SA 4.0 by
-  Joel Victor, reference code GPL-3.0. Our CLI derives from that work and should ship
-  GPL-3.0 with a LICENSE file and this attribution in the README.
+  Joel Victor, reference code GPL-3.0.
+- **Licence of this document.** It builds on that CC BY-SA 4.0 documentation, and CC BY-SA is
+  a share-alike licence, so **this file is itself licensed CC BY-SA 4.0**. Attribution:
+  *based on protocol research by Joel Victor,
+  https://github.com/jvsobrinho/mvave-blackbox-ble*. Crediting the source does not discharge
+  share-alike on its own. Separately, *code* derived from the GPL-3.0 reference logic must be
+  GPL-3.0; `tools/blackboxctl/` ships GPL-3.0 with its own `LICENSE` and `NOTICE`.
+
+Start at [`README.md`](./README.md) in this directory for the reading order and the
+consolidated confidence summary.

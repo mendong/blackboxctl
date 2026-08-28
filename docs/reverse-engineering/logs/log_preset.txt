@@ -1,0 +1,10 @@
+[MIDI] destination ref=241655833 display='USB Composite Device' mfr='Jieli Technology'
+[MIDI] source      ref=241655832 display='USB Composite Device' mfr='Jieli Technology'
+=== STEP 3: Preset Sync / Stream ===
+[OUT RAW  ] Preset Sync 00 59 23 08 00 00 04 00 00 00 20 04 00 00 D7
+[OUT SYSEX] F0 00 32 0D 41 00 00 00 02 00 00 00 00 42 00 00 00 57 01 F7
+[OUT DONE ] complete=True remaining=0 in 0.013s
+[IN  SYSEX 0] (24B) F0 00 32 0D 61 00 00 00 02 00 00 00 00 42 00 00 00 02 04 00 00 30 1A F7
+[IN  RAW   0] (19B) 00 59 23 0C 00 00 04 00 00 00 20 04 00 00 02 02 00 00 D3
+  -> len 19, offset14 = 2 (0x02) -> P03 IN RANGE P01..P80
+

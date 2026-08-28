@@ -8,6 +8,11 @@ presets and slot names, and manages the capture and IR files that M-EFCS scans.
 a state-changing frame to the pedal, and no flag that enables one. See
 [Safety model](#safety-model).
 
+This tool is one of four parts of a larger workspace. The repository entry point is
+[`../../README.md`](../../README.md); the protocol it implements is documented in
+[`../../docs/reverse-engineering/`](../../docs/reverse-engineering/README.md), and
+[STATUS.md](STATUS.md) is what to believe about this tool specifically.
+
 ```
 python -m blackboxctl selftest          # offline; touches nothing
 python -m blackboxctl device names      # read the 20 amp and 20 IR slot names
@@ -44,6 +49,11 @@ cd tools/blackboxctl
 python -m blackboxctl --help            # run in place
 pip install -e .                        # or install the console script
 ```
+
+`requires-python` is **>= 3.10** (declared in `pyproject.toml` only). Use `pip
+install -e .`, not a plain `pip install .`: `library diff` locates
+`presets/library.md` by walking up from its own file, so a non-editable install
+puts it outside the repository and the command fails.
 
 ## What it does
 
@@ -182,8 +192,13 @@ protocol will hit all five:
 ## Tests
 
 ```sh
-python -m pytest        # 212 tests, no hardware required
+python -m pytest        # 221 tests, no hardware required
 ```
+
+`pytest` is **not** a dependency of this package and is not vendored — install it
+first (`pip install pytest`) or the command above fails on a fresh machine. The
+figure was re-run on 2026-08-28 under Python 3.14.3 with pytest 9.1.1: `221
+passed`. It is the same figure `STATUS.md` reports.
 
 The fixtures are real bytes from the pedal, not synthesised: the seven
 transmitted read commands, the seven unique reply frames, the 340-byte SysEx and

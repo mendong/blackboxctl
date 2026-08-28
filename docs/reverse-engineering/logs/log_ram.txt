@@ -1,0 +1,22 @@
+[MIDI] destination ref=241655833 display='USB Composite Device' mfr='Jieli Technology'
+[MIDI] source      ref=241655832 display='USB Composite Device' mfr='Jieli Technology'
+=== STEP 2: Request RAM Dump ===
+[OUT RAW  ] RAM Dump 00 59 23 08 00 00 04 00 00 00 10 5C 00 00 8F
+[OUT SYSEX] F0 00 32 0D 41 00 00 00 02 00 00 00 00 41 0B 00 00 0F 01 F7
+[OUT DONE ] complete=True remaining=0 in 0.012s
+[IN  SYSEX 0] (125B) F0 00 32 0D 21 06 00 00 02 00 00 00 00 41 0B 00 00 55 00 00 08 50 40 00 02 03 02 04 00 00 20 40 00 02 04 00 18 10 00 41 0A 00 6A 00 50 03 40 0C 00 00 00 00 00 70 02 40 21 00 56 00 70 02 40 0F 00 00 00 70 01 20 06 00 24 00 00 00 00 00 00 00 00 54 00 3C 01 70 01 00 00 00 00 00 00 00 40 02 00 0F 00 40 01 10 06 00 0F 00 00 00 20 04 40 05 00 64 00 00 00 00 00 00 00 00 2C 03 F7
+[IN  RAW   0] (107B) 00 59 23 64 00 00 04 00 00 00 10 5C 00 00 55 00 00 01 05 02 04 03 01 01 00 00 01 01 02 02 00 03 01 04 15 00 35 00 3A 00 32 00 00 00 00 00 17 00 43 00 2B 00 2E 00 3E 00 00 00 3C 00 32 00 48 00 00 00 00 00 00 00 54 00 2F 00 0F 00 00 00 00 00 00 00 0A 00 0F 00 30 00 31 00 1E 00 00 00 44 00 16 00 64 00 00 00 00 00 00 00 D6
+  -> decoded length 107 (doc says 107)
+--- decode RAM dump payload d[14:106] (92 bytes) ---
+  raw92 55 00 00 01 05 02 04 03 01 01 00 00 01 01 02 02 00 03 01 04 15 00 35 00 3A 00 32 00 00 00 00 00 17 00 43 00 2B 00 2E 00 3E 00 00 00 3C 00 32 00 48 00 00 00 00 00 00 00 54 00 2F 00 0F 00 00 00 00 00 00 00 0A 00 0F 00 30 00 31 00 1E 00 00 00 44 00 16 00 64 00 00 00 00 00 00 00
+  [00] patch volume      = 85 (hi byte 0)
+  [02] routing           = ['FX', 'AMP', 'CAB', 'MOD', 'REV', 'DLY']  raw 00 01 05 02 04 03
+  [08] on/off            = FX=ON, AMP=ON, MOD=off, DLY=off, REV=ON, CAB=ON
+  [0E] models            = FX=2(Compress) AMP=2 MOD=0(Chorus) DLY=3(Dual) REV=1(Hall) CAB=4
+  [14] FX  knobs      = k1=21, k2=53, k3=58, k4=50, k5=0, k6=0
+  [20] AMP knobs      = Gain=23, Level=67, Bass=43, Mid=46, Treble=62, -=0
+  [2C] MOD knobs      = Speed=60, Depth=50, Mix=72, k4=0, k5=0, -=0
+  [38] DLY knobs      = Time=84, FB=47, Mix=15, k4=0, k5=0, k6=0
+  [44] REV knobs      = Decay=10, Mix=15, HP=48, LP=49, k5=30, -=0
+  [50] CAB knobs      = Level=68, L-Cut=22, H-Cut=100, -=0, -=0, -=0
+
