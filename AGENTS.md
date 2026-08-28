@@ -9,8 +9,14 @@ number**, so replacing a slot silently changes every preset that points at it.
 
 ## 1. Current state
 
-- **The pedal is unplugged.** Every device command, read or write, is blocked on plugging
-  it back in.
+- **The pedal is connected**, and read commands work. Reconnected and re-verified
+  2026-08-28: `device sync`, `device names`, `device dump` and `device preset N` for
+  N = 1..80 all succeed.
+- **All 80 presets have been read from flash.** The slot-exposure audit that used to be a
+  precondition for the first slot write is done; the tables are in
+  [presets/library.md](presets/library.md#slot-exposure-what-a-slot-write-actually-changes).
+  P06–P40 are populated factory presets, not empty. P42–P80 are unused defaults, which also
+  confirms the preset count is 80.
 - **Exactly one amp or IR slot has ever been written by this project.** On 2026-08-28,
   through the M-EFCS GUI, IR slot 1 went from the factory `1AC-SeVin` to `1ML_BEST_IR`.
   Confirmed twice: in the GUI `Position` dropdown, and later by reading the IR name table
@@ -20,9 +26,10 @@ number**, so replacing a slot silently changes every preset that points at it.
   capture-based versions of presets P01-P05. Amp slot 1 and IR slot 7 stay factory
   because P41 points at them.
 - **Presets currently on the device:** P01-P03 hold the built-in-amp-model values written
-  on 2026-07-20; P01 and P03 were confirmed by flash read on 2026-08-28, P02 was not.
-  P04-P05 hold the built-in-model values written on 2026-07-26, never confirmed by a
-  read-back. P06-P40 have never been read by anyone here. P41 is protected.
+  on 2026-07-20 and P04-P05 those written on 2026-07-26. All five are now confirmed by
+  flash read. One mismatch against the written record: **P05 reads total volume 49, not the
+  85 the July note claims.** P06-P40 are populated factory presets; P42-P80 are unused
+  defaults. P41 is protected.
 - **On the Mac:** 24 captures and 83 IRs installed into the M-EFCS library, on top of the
   15 captures and 210 IRs already there, and confirmed visible after an app restart.
 - **Nothing has ever been written to this pedal over the wire.** Every device command sent
@@ -67,12 +74,12 @@ built-in amp models and not from the factory presets. The factory presets are ab
 
 | | |
 | --- | --- |
-| Pedal | M-VAVE BlackBox, USB-C to the Mac. Currently unplugged. |
+| Pedal | M-VAVE BlackBox, USB-C to the Mac. Connected; read commands verified 2026-08-28. |
 | M-EFCS connection label | `BLACKBOX v20` — the editor's product label, not a confirmed firmware version |
 | Editor | `/Applications/M-EFCS.app`, bundle id `com.digAmp.dgAmp`, Mac App Store build, version `3.5.2615` (`CFBundleVersion` `3052615`) |
 | macOS audio-device label | `USB-Audio` |
 | CoreMIDI identity | manufacturer `Jieli Technology`, product `USB Composite Device` |
-| Capacity | 20 amp slots, 20 IR/CAB slots, both replaceable; presets `P01`-`P41` used here |
+| Capacity | 20 amp slots, 20 IR/CAB slots, both replaceable; **80 preset slots**, confirmed by read (index 79 answers, 80 refused). `P01`-`P41` used here; `P42`-`P80` are unused defaults |
 | File library | `~/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS/` — `ampFile` for captures, `cabFile` for IRs |
 
 Factory amp models can be restored from the PC version of M-EFCS. Firmware updates run
@@ -117,11 +124,12 @@ stored on the device, document the slot-to-name mapping in this repository.
 
 1. Never overwrite `P41` unless the user explicitly requests it.
 2. Presets reference amp and IR slots **by number**. Replacing a slot changes every preset
-   pointing at it, including presets nobody here has read. `P41` uses **amp slot 1** and
-   **IR slot 7**; keep those two at their factory contents while `P41` is protected. Known
-   live exposures: P01 points at IR slot 11 and amp slot 2, P03 at IR slot 5 and amp
-   slot 3, P04 and P05 at IR slot 2 — all scheduled to be replaced. **P06-P40 have never
-   been read**, so their exposure is unknown; audit them before the first slot write.
+   pointing at it. The full exposure map for all 80 presets is in
+   [presets/library.md](presets/library.md#slot-exposure-what-a-slot-write-actually-changes)
+   — consult it before any slot write. `P41` uses **amp slot 1** and **IR slot 7**; keep
+   those at factory while `P41` is protected, which also protects P02, P13 and P14, who
+   share IR slot 7. Only **amp slots 7 and 20 and IR slots 14, 19 and 20** are referenced by
+   nothing and can be replaced with no side effect.
 3. Build and audition new sounds in the user-selected slot only after inspecting and
    recording its current contents.
 4. Before writing a preset, read and record the current slot, effect chain, parameter

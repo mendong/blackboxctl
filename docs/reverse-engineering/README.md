@@ -150,7 +150,8 @@ different thing, and a validator should quote the middle one:
 ## Hard rules that apply to everything here
 
 1. **Nothing is sent to the pedal in the current phase, not even a read.** The device is
-   unplugged. Every write path in `blackboxctl` is gated behind `hardware_confirmed=False`.
+   connected but never written to. Every write path in `blackboxctl` is gated behind
+   `hardware_confirmed=False`.
 2. **Never delete a raw byte log.** The hex in `device-validation.md` and in `logs/` cannot
    be recaptured without the hardware.
 3. The M-EFCS sandbox library at

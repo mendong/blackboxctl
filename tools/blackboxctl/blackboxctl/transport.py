@@ -250,6 +250,22 @@ class BlackBox:
     # -- lifecycle --------------------------------------------------------
 
     def open(self) -> "BlackBox":
+        """Acquire the CoreMIDI client and ports. Idempotent.
+
+        Re-opening an already-open instance MUST be a no-op. ``open_device()``
+        returns an instance on which ``open()`` has already run, and callers
+        then use it as a context manager, so ``__enter__`` calls ``open()`` a
+        second time. Before this guard existed, that second call replaced
+        ``self._read_proc`` with a fresh ``CFUNCTYPE`` trampoline and let the
+        first one be garbage collected while the first input port -- leaked,
+        never disposed, still connected to the source -- could still invoke it.
+        CoreMIDI then called freed code on its own thread and the process died
+        with SIGBUS on the next reply from the pedal. Found on real hardware
+        2026-08-28; regression test in tests/test_transport_reopen.py.
+        """
+        if self._client:
+            return self
+
         sources, destinations = list_endpoints()
         src = [e for e in sources if (e.manufacturer or "") == self.manufacturer]
         dst = [e for e in destinations

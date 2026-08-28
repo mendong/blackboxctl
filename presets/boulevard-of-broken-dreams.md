@@ -5,7 +5,7 @@
 - Built-in-model version written to the device 2026-07-26 KST; revised to capture-based
   targets 2026-08-28 KST
 - M-EFCS app: `3.5.2615` (`CFBundleVersion` `3052615`)
-- Connected device label: `BLACKBOX v20`. The pedal is currently unplugged.
+- Connected device label: `BLACKBOX v20`. The pedal is connected.
 - Guitar: HSS Strat-style guitar, bridge humbucker for both presets
 - Protected preset: P41 `Wonderwall Live` — do not modify
 - Slot maps and library rules: [library.md](library.md)
@@ -16,9 +16,15 @@
 P04 and P05 still hold the built-in-amp-model values written on 2026-07-26 and recorded
 under [Written on 2026-07-26](#written-on-2026-07-26--built-in-amp-model-version-superseded-as-a-target).
 
-That is a record of a GUI session, not a read-back. Unlike Hana's P01 and P03, **P04 and
-P05 have never been read out of flash**, so nothing independently confirms what is stored.
-Reading them is now a two-command, read-only operation that does not load the preset:
+**Both were read out of flash on 2026-08-28**, in the second device session, and the slot
+references match the July record: P04 points at amp slot 1 `1J900_CL` and IR slot 2
+`2JVM_1960_57`; P05 points at amp slot 9 `9J900_DS` and the same IR slot 2.
+
+One value does **not** match. The July record says both presets use total volume 85.
+Flash says P04 is 85 but **P05 is 49**. The July note may simply be wrong — it stated a
+shared value for both presets rather than recording each — or P05 was adjusted afterwards
+on the pedal itself. Either way, flash is the authority, and a preset write built from the
+July numbers would raise P05 by 36 counts. Re-read before writing:
 
 ```sh
 cd tools/blackboxctl
@@ -26,7 +32,9 @@ python -m blackboxctl device preset 4
 python -m blackboxctl device preset 5
 ```
 
-Do that before writing anything.
+Note also that both presets point at **IR slot 2**, which is the busiest IR slot on the
+pedal — seven presets depend on it. See
+[library.md](library.md#slot-exposure-what-a-slot-write-actually-changes).
 
 ## Before overwrite
 
@@ -89,8 +97,8 @@ both now superseded. The values and the write result below are recovered from co
 `da7aee9` (2026-07-26), whose version of this file was replaced by the capture-based
 rewrite in `27b2042` and would otherwise have been lost.
 
-They are no longer the target for P04 and P05. Unlike Hana's P01 and P03 they have never
-been read back from flash, so the only evidence for them is that July GUI session.
+They are no longer the target for P04 and P05. Both were read back from flash on
+2026-08-28: the slot references match, and P05's total volume does not.
 
 Slot references, which matter because those slots are scheduled to be rewritten: P04 uses
 amp slot 1 and IR slot 2; P05 uses amp slot 9 and IR slot 2. IR slot 2 is scheduled to
@@ -126,8 +134,8 @@ Built-in-model version, 2026-07-26 — the version that should be on the device:
   `7VOX_AC30`, Chorus Mix 12, Room Mix 12, Dual delay disabled — all of which the
   2026-08-28 flash decode later reproduced.
 - P01-P03 safety: no edit or save action was performed on those slots.
-- Independent confirmation by flash read: **not done.** P04 and P05 were not among the
-  slots read on 2026-08-28.
+- Independent confirmation by flash read: **done**, in the second 2026-08-28 session. Slot
+  references match. Total volume does not: P05 reads 49, not the 85 the July note claims.
 - Player listening check: never completed.
 
 Capture-based version — **nothing written**:
@@ -135,7 +143,7 @@ Capture-based version — **nothing written**:
 - Library install: passed. The captures and IRs named above are present in the M-EFCS AMP
   and CAB lists after an app restart, and `python -m blackboxctl library diff` resolves
   every one of them to a file on disk.
-- Read-only inspection of the current P04 and P05: **not done.** Use
+- Read-only inspection of the current P04 and P05: **done** 2026-08-28. Reproduce with
   `python -m blackboxctl device preset 4` and `... 5`.
 - Amp and IR slot writes: **not done.** Only IR slot 1 has ever been written on this
   pedal. Amp slots 13 and 15 and IR slots 11 and 12 still hold their factory contents,
@@ -155,4 +163,5 @@ Play P04 and P05 at matched loudness with the bridge humbucker:
 4. If P05 is too saturated, reduce AMP Gain before disabling Boost.
 5. Adjust output Level only after the gain and EQ feel correct.
 
-The pedal is currently unplugged, so none of the remaining steps can proceed.
+The pedal is connected, so these steps are unblocked. They need a guitar and a listener,
+not a device command.

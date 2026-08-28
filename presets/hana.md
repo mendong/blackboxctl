@@ -4,18 +4,27 @@
 
 - Captured: 2026-07-20 KST, revised to capture-based presets 2026-08-28 KST
 - M-EFCS app: `3.5.2615` (`CFBundleVersion` `3052615`)
-- Connected device label: `BLACKBOX v20`. The pedal is currently unplugged.
+- Connected device label: `BLACKBOX v20`. The pedal is connected.
 - Guitar: HSS Strat-style guitar
 - Protected preset: P41 `Wonderwall Live` — do not modify
 - Slot maps and library rules: [library.md](library.md)
 
 ## What is on the device right now
 
-**None of the capture-based target values below has been written.** P01 and P03 currently
-hold the built-in-amp-model values recorded under
+**None of the capture-based target values below has been written.** P01, P02 and P03
+currently hold the built-in-amp-model values recorded under
 [Currently on the device](#currently-on-the-device--the-built-in-amp-model-version), which
-were written on 2026-07-20 and confirmed by reading flash on 2026-08-28. P02 has never
-been read back from the device at all.
+were written on 2026-07-20.
+
+All three are now confirmed by reading flash. P01 and P03 were read on 2026-08-28; **P02
+was read later the same day, in the second device session, closing the last gap.** P02's
+stored image points at amp slot 4 `4BLUE_OD` and IR slot 7 `7VOX_AC30`, exactly what the
+July record says was written.
+
+That makes P02 relevant to slot reservations for a reason nothing here noticed before: it
+shares **IR slot 7** with the protected P41, along with P13 and P14. Reserving slot 7 for
+P41 protects all four. See
+[library.md](library.md#slot-exposure-what-a-slot-write-actually-changes).
 
 To check any of this without loading a preset:
 
@@ -203,4 +212,5 @@ Capture-based version — **nothing written**:
   version.
 - Player listening check: not done.
 
-The pedal is currently unplugged, so none of the remaining steps can proceed.
+The pedal is connected, so these steps are unblocked. They need a guitar and a listener,
+not a device command.

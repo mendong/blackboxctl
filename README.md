@@ -25,7 +25,7 @@ committed.
 | File library | `~/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS/` — `ampFile` for captures, `cabFile` for IRs. Scanned once at app launch. |
 | Transport | Proprietary packets as Base-128 packed SysEx over USB MIDI; the pedal appears in CoreMIDI as manufacturer `Jieli Technology` |
 
-The pedal is currently **unplugged**. Every device command is blocked on reconnecting it.
+The pedal is **connected**, and every read command is verified working as of 2026-08-28.
 
 ## Current state
 
@@ -128,7 +128,7 @@ claim about the tool — it separates what was verified on hardware from what wa
 2. Read the song document for the preset you care about.
 3. Read the preset safety rules in [`AGENTS.md`](AGENTS.md). The important one: presets
    reference amp and IR slots by number, so replacing a slot silently changes every preset
-   pointing at it. Presets P06–P40 have never been read and will be affected by the pending
+   pointing at it. Presets P06–P40 are populated factory presets and will be affected by the pending
    slot writes.
 4. Record a slot's current contents before overwriting it.
 

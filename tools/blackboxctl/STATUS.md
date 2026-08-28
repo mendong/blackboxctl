@@ -47,14 +47,36 @@ those same recorded replies.
 1 IR were refused), and `library diff` reports `ok=38 reserved=2` against
 `presets/library.md`.
 
+## Verified on hardware 2026-08-28, second session
+
+The pedal was reconnected and this exact module was exercised against it. Three things
+that the table below used to list as unverified are now closed.
+
+- **The send path and the CoreMIDI receive registration are verified.** `MIDISendSysex`,
+  the `MIDISysexSendRequest` struct, the completion wait, `MIDIInputPortCreate`,
+  `MIDIPortConnectSource` and endpoint resolution by manufacturer all work. `device sync`,
+  `device names`, `device dump` and `device preset N` were run against the real pedal.
+- **`PRESET_COUNT = 80` is confirmed**, no longer a hypothesis. Flash indices 0–79 all
+  return a decodable 92-byte image; index 80 is refused. Indices 41–79 hold unused
+  defaults: amp slot 1, IR slot 1, volume 85.
+- **A crash in this module was found and fixed.** `open()` was not idempotent.
+  `open_device()` returns an already-opened instance, and the CLI then used it as a context
+  manager, so `__enter__` called `open()` a second time; that replaced the
+  `ctypes.CFUNCTYPE` read trampoline and let the first one be collected while the first
+  input port — leaked, never disposed, still connected to the source — could still invoke
+  it. CoreMIDI called freed code and every `blackboxctl device …` command died with SIGBUS
+  (exit 138) as soon as the pedal replied. `open()` now returns early when already open.
+  Regression test: `tests/test_transport_reopen.py`. This is exactly the class of defect
+  the "implemented but unverified" table existed to warn about.
+
+Still true after that session: **nothing has ever been written to this pedal.** Every
+command sent was a `00 59 23` read.
+
 ## Implemented but unverified
 
 | Thing | Why it is unverified |
 | :--- | :--- |
-| **`transport.py`'s send path** — `MIDISendSysex`, the `MIDISysexSendRequest` struct, the 2.0 s completion wait | This module is a **rewrite** of the one that produced the hardware logs. No log records *this* file transmitting anything. The struct layout and the read commands it builds are identical, but that is inheritance, not verification. |
-| **`transport.py`'s CoreMIDI receive registration** — `MIDIInputPortCreate`, `MIDIPortConnectSource`, endpoint resolution | Same reason. The `MIDIReadProc` packet-walk *logic* is covered by synthetic `MIDIPacketList` buffers in `tests/test_transport_rx.py`; the CoreMIDI plumbing around it is not. |
 | **Real-time byte filtering** (`0xF8`–`0xFE` inside a SysEx) | Permitted by the MIDI spec, never observed from this pedal. HYPOTHESIS-level hardening, tested only synthetically. |
-| **`PRESET_COUNT = 80`** | Evidence is a vendor PDF and bbedit's `app.js:227`. The highest flash index ever read here is 40. Relabelled HYPOTHESIS. |
 | **Every write path** | See below. Nothing has ever been written to this pedal. |
 | **Whether the device accepts an `am2converter` `00 00 32 00` magic** | Untested. `am2.go:14`'s `InitData` is literally `{0, 0, 50, 0, ...}` and matches those 60 header bytes exactly, so the header was *written* that way, not corrupted — but whether M-EFCS/V19 loads it is unknown. Treated as a warning, not a refusal, because a hard refusal would overstate the evidence and would block 4 of the files `presets/library.md` requires. |
 | **Whether a V19 pedal tolerates a 7868-byte AM4 record, or a 32-bit-float IR** | Untested. Both are warnings. The float case is not speculative in one direction: the *source* file for the pedal's own CAB slot 10, `10SoldSC412.wav`, is 32-bit IEEE float, so refusing that format would condemn a file the vendor itself ships. Note the limit of that argument — the on-device `CAB` record is 24-bit PCM (`capture-format-spec.md` §7.1), so this says the vendor's source set is non-conforming, not that the pedal runs float. See `presets/library.md`, "What that does and does not prove". |
@@ -71,8 +93,8 @@ those same recorded replies.
    inherited from its predecessor.
 3. **Every write path** is blocked on a deliberate decision, not on a missing
    feature. See below.
-4. **`PRESET_COUNT`** is blocked on one read: try flash index 79 and index 80
-   and see which answers.
+4. ~~**`PRESET_COUNT`** is blocked on one read~~ — **done 2026-08-28.** Index 79 answers,
+   index 80 is refused, so the count is 80.
 
 ## Safety model
 

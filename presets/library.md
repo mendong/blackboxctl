@@ -32,8 +32,8 @@ Sources are listed at the bottom of this file.
   `docs/reverse-engineering/official-docs.md` infers from a firmware filename on disk that
   this unit runs V19. The two have not been reconciled; neither should be quoted as the
   firmware version. The read-only device-name query would settle it.
-- The pedal is currently **unplugged**. No device command of any kind can run until it is
-  reconnected.
+- The pedal is **connected**. All read commands were re-verified on 2026-08-28, including
+  reading all 80 presets and both slot name tables.
 - Device capacity: 20 amp slots, 20 IR/CAB slots, both replaceable. The 20 factory amp
   models can be restored from the PC version of M-EFCS.
 
@@ -253,24 +253,89 @@ is the first thing to change.
 `1J900_CL`) and CAB model byte `0x06` (**IR slot 7**, `7VOX_AC30`). Those two slots keep
 their factory contents so that P41 keeps its sound. Everything else is replaced.
 
-### Slot references are live, and P06–P40 have never been read
+### Slot exposure: what a slot write actually changes
 
-Replacing a slot silently changes every preset that points at it. Two of the presets that
-were read on 2026-08-28 are already affected by the pending writes:
+Replacing a slot silently changes every preset that points at it. This audit was the
+precondition for the first slot write, and it is now **done**: all 80 presets were read
+from flash on 2026-08-28 with `blackboxctl device preset N`, read-only, without loading
+any of them.
 
-| Preset | Points at | Scheduled change |
-| --- | --- | --- |
-| P01 (current, built-in version) | IR slot 11 `11FD_TW1980`, amp slot 2 `2FD_CL` | slot 11 becomes `11MR_1960VB`, slot 2 becomes a Fender capture |
-| P03 (current, built-in version) | IR slot 5 `5HIFI_OK`, amp slot 3 `3JC120_CL` | slot 5 becomes `5FD_DLX_C12K`, slot 3 becomes a Fender capture |
-| P41 | amp slot 1, IR slot 7 | none — both reserved |
+The headline result is that **P06–P40 are not empty.** They are fully populated factory
+presets, every one of them pointing at an amp slot and an IR slot. The planned map
+replaces amp slots 2–20 and IR slots 2–6 and 8–20, which repoints most of them.
 
-For P01–P05 this is harmless, because they are being rewritten anyway. **For P06–P40 it
-is not.** Those 35 presets have never been read, appear in no document here, and will
-change silently when amp slots 2–20 and IR slots 2–6 and 8–20 are written.
+**Presets P42–P80 exist and are unused defaults**: every one reads amp slot 1, IR slot 1,
+volume 85. They also settle the preset count — flash indices 0–79 answer and index 80 is
+refused, so **80 presets is confirmed**, not assumed.
 
-Precondition for the first slot write: run `device preset N` for N = 1..41 and record the
-amp and CAB model bytes of every preset. That is a read-only operation and does not load
-anything.
+Amp slot demand across P01–P41:
+
+| Amp slot | Factory name | Presets pointing at it |
+| ---: | --- | --- |
+| 1 | `J900_CL` | P04 P17 P41 — plus every unused default P42–P80 |
+| 2 | `FD_CL` | P01 P21 P26 |
+| 3 | `JC120_CL` | P03 P09 |
+| 4 | `BLUE_OD` | P02 P06 P10 P25 P29 P30 |
+| 5 | `RAT_OD` | P13 P14 P15 P27 P31 |
+| 6 | `M-VAVE_OD` | P07 P32 |
+| 7 | `SUPA_OD` | **none** |
+| 8 | `DARKS_DS` | P11 |
+| 9 | `J900_DS` | P05 P18 P22 |
+| 10 | `JHS_DS` | P16 |
+| 11 | `EVH_5150` | P28 P34 |
+| 12 | `FRIMAN` | P19 P23 |
+| 13 | `XC_DS` | P08 P12 P36 |
+| 14 | `ROOM40` | P33 |
+| 15 | `JVM` | P20 P24 P35 |
+| 16 | `AgDb750_BS` | P37 |
+| 17 | `ApSVT_BS` | P38 |
+| 18 | `PjBuddy_BS` | P40 |
+| 19 | `DgXu_BS` | P39 |
+| 20 | `MarkLm_BS` | **none** |
+
+IR slot demand across P01–P41:
+
+| IR slot | Factory name | Presets pointing at it |
+| ---: | --- | --- |
+| 1 | now `ML_BEST_IR` | P09 P25 — plus every unused default P42–P80 |
+| 2 | `JVM_1960_57` | P04 P05 P08 P21 P22 P23 P24 |
+| 3 | `V30_MD421` | P27 |
+| 4 | `G12-EVH_CT` | P20 P35 |
+| 5 | `HIFI_OK` | P03 P06 P07 P26 P29 |
+| 6 | `WANGS212_ECM` | P19 |
+| 7 | `VOX_AC30` | P02 P13 P14 P41 |
+| 8 | `FRMAN112` | P15 P16 |
+| 9 | `MeOSick-III` | P30 |
+| 10 | `SoldSC412` | P34 |
+| 11 | `FD_TW1980` | P01 P31 |
+| 12 | `MESA_412` | P17 P18 P33 P36 |
+| 13 | `HIW412SWF` | P28 |
+| 14 | `Recto_112` | **none** |
+| 15 | `JC120_BOX` | P10 P11 P12 P32 |
+| 16 | `Agula410` | P37 |
+| 17 | `AgSVT410` | P38 P40 |
+| 18 | `DgDG212N` | P39 |
+| 19 | `MbSway210` | **none** |
+| 20 | `Tace412` | **none** |
+
+Consequences worth deciding on before writing anything:
+
+- **Free slots.** Amp slots 7 and 20, and IR slots 14, 19 and 20, are referenced by no
+  preset in P01–P41. They are the only slots that can be replaced with zero side effects,
+  and the natural place to start.
+- **IR slot 7 has four dependents, not one.** It is reserved for P41, but P02, P13 and P14
+  point at it too. Reserving it protects all four.
+- **Amp slots 16–20 are bass amps** (`_BS`), used only by P37–P40, which are the factory
+  bass presets. For a guitarist those five slots are the cheapest to give up — but doing so
+  does change P37–P40.
+- **The busiest slots are IR 2 (seven presets) and amp 4 (six presets).** Replacing those
+  has the widest blast radius.
+- P01–P05 are being rewritten anyway, so their exposure is harmless.
+
+If preserving the factory presets matters, the honest options are: replace only the five
+free slots; or accept that P06–P40 change and treat them as expendable, which is consistent
+with the decision to abandon the factory presets in the first place. That is a call for the
+owner, not something to assume.
 
 ## Amp slot map (20)
 
