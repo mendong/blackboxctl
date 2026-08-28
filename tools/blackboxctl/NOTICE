@@ -1,0 +1,92 @@
+blackboxctl
+===========
+
+Copyright (C) 2026 blackboxctl contributors.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+Why GPL-3.0
+-----------
+
+blackboxctl is a derivative work. Its packet layout, Base-128 codec, checksum
+rule, memory map and command builders were all reconstructed from community
+reverse engineering that is itself licensed CC BY-SA 4.0 (documentation) and
+GPL-3.0 (reference code). GPL-3.0 is the license those obligations require, and
+this project carries it deliberately rather than by default.
+
+
+Upstream work this project is derived from
+------------------------------------------
+
+1. M-Vave BlackBox BLE protocol documentation
+   Author:  Joel Victor
+   Source:  https://github.com/jvsobrinho/mvave-blackbox-ble
+   License: documentation CC BY-SA 4.0; reference code GPL-3.0
+
+   This is the primary source. The BLE/USB transport description, the SysEx
+   encapsulation, the packet field names, the 92-byte preset memory map, the
+   knob dictionaries, the routing bytes and the amp/cab name handshake all come
+   from here. Documentation reused or adapted from it remains CC BY-SA 4.0 and
+   must keep this attribution.
+
+   Corrections this project has made to that documentation, all recorded with
+   their evidence in docs/reverse-engineering/device-validation.md:
+     * the worked Base-128 example's raw and encoded lines do not correspond;
+     * the inbound checksum sums from offset 5, not offset 4;
+     * there is no "command type" byte - offsets 3..4 are a 16-bit length;
+     * "AMP names base address 90 18 01 00" is address 0x90000000 plus a 24-bit
+       size of 280;
+     * the "Write_Address = Dump_Index + 2" rule does not hold.
+
+2. mvave-blackbox-edit (bbedit)
+   Author:  Joel Victor
+   Source:  https://github.com/jvsobrinho/mvave-blackbox-edit
+   License: MIT
+
+   A working Web Bluetooth editor. Its encodeSysEx routine is the reference the
+   Base-128 codec here follows, and its model/parameter tables - including the
+   isDynamic distinction that marks the amp and cab blocks as having a fixed
+   knob layout - are the source of the block dictionaries in protocol.py.
+
+   MIT requires that its copyright notice and permission notice accompany
+   substantial portions of its software; this notice serves that purpose.
+
+3. cuvave-midi
+   Author:  Pedro Ferreira
+   Source:  https://github.com/pferreir/cuvave-midi
+   License: GPL-3.0
+
+   The structure of the Base-128 encode/decode algorithm. An independent
+   implementation derived from this project's test vectors was used as a
+   cross-check against the codec here; the two agree bit for bit on 299 random
+   buffers and on every SysEx message captured from the device.
+
+4. am2manager
+   Author:  Walter Wanderley
+   Source:  https://github.com/walterwanderley/am2manager
+   License: Apache-2.0
+
+   The .am2 / .am3 capture container field names in captures.py. Its am2.go
+   InitData literal is also what identifies the "00 00 32 00" magic seen across
+   much of the community capture pack as something am2converter wrote, rather
+   than as damage to a good file.
+
+   Apache-2.0 requires that this NOTICE be carried in redistributions, and that
+   modifications be marked. blackboxctl does not vendor any am2manager code; it
+   uses its field names and its published InitData constant.
+
+5. PocketEdit
+   Source:  https://github.com/suckyble/PocketEdit
+   The editor bbedit was adapted from. Listed for provenance; no code from it is
+   used here.
+
+
+Trademarks
+----------
+
+"M-Vave", "CUVAVE", "BlackBox" and "M-EFCS" are the marks of their respective
+owners. This project is not affiliated with, endorsed by, or supported by them.
+It exists so that the owner of a BlackBox can talk to their own hardware.

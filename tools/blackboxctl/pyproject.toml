@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackboxctl"
+version = "0.1.0"
+description = "Read-only command line tool for the M-Vave BlackBox amp modeller and its M-EFCS file library"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "blackboxctl contributors" }]
+keywords = ["m-vave", "blackbox", "guitar", "sysex", "midi"]
+classifiers = [
+  "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+  "Operating System :: MacOS :: MacOS X",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Sound/Audio :: MIDI",
+]
+dependencies = []
+
+[project.scripts]
+blackboxctl = "blackboxctl.cli:main"
+
+[project.urls]
+"Upstream protocol documentation" = "https://github.com/jvsobrinho/mvave-blackbox-ble"
+
+[tool.setuptools]
+packages = ["blackboxctl"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

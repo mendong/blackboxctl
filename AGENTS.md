@@ -67,9 +67,42 @@ M-EFCS may not support separately renaming every internal preset. When a name ca
 5. Prefer reversible changes. Keep enough information to restore the previous preset.
 6. After writing, verify both the saved parameter values in M-EFCS and the audible result through the connected guitar.
 
+## blackboxctl: the CLI
+
+The M-EFCS GUI is no longer the only way to work with the device. There is a CLI at
+[tools/blackboxctl](tools/blackboxctl/) — no dependencies, GPL-3.0, `python -m blackboxctl`.
+Read [tools/blackboxctl/STATUS.md](tools/blackboxctl/STATUS.md) before trusting any claim
+about it; it separates what was verified on hardware from what was not.
+
+It talks to the pedal over USB MIDI SysEx, so it does not need the GUI, does not need
+screen coordinates, and cannot be derailed by another app taking focus.
+
+**Device commands are read only and cannot be made otherwise.** No write path is enabled;
+`python -m blackboxctl write-paths` shows each state-changing command and the exact
+evidence for why it is disabled. Nothing has ever been written to this pedal.
+
+| Command | What it does |
+| --- | --- |
+| `selftest` | offline protocol check; touches nothing. Run it first. |
+| `device endpoints` / `sync` / `dump` / `names` / `preset N` | read endpoints, the active preset id, the live preset, the 40 slot names, or stored `PNN` — decoded, without loading it |
+| `inspect FILES` | validate `.am2` / `.am3Data` captures and `.wav` IRs |
+| `rename FILE NAME` | edit a capture's 13-char header name; `--repair-magic` fixes an `am2converter` magic |
+| `decode --hex …` | decode a 92-byte preset image offline |
+| `library list` / `diff` / `install` / `restart-editor` | list files, compare `presets/library.md` to disk, copy files in, restart the GUI so it rescans |
+
+`library install`, `library restart-editor` and `rename --in-place` are **dry runs by
+default** and need `--yes`. `install --force` keeps a timestamped `.bak`.
+`restart-editor --yes` quits M-EFCS with an AppleScript `quit`, which discards unsaved GUI
+work — do not run it while someone is using the app.
+
+Reading a preset with the CLI is now the fastest way to satisfy Preset Safety Rule 4
+(record the current slot contents before writing). `device preset 41` dumps P41 without
+loading it.
+
 ## Driving M-EFCS from a Session
 
-M-EFCS is a Flutter app, so its accessibility tree exposes only the window, not its
+Still needed for anything the CLI cannot do: writing presets, and auditioning captures and
+IRs. M-EFCS is a Flutter app, so its accessibility tree exposes only the window, not its
 controls. There is no way to click a named button. What works:
 
 - `osascript -e 'tell application "System Events" to tell process "m_efcs" to get {position, size} of window 1'` gives the window frame in points.

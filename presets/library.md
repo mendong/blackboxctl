@@ -132,9 +132,10 @@ that keeps the factory convention of a leading slot number.
 | 19 | `19AC_D35` | `102_Acoustic_G_IR_Martin_D35SA_Gplus_44100_Bld` | acoustic, P03 |
 | 20 | `20AC_TAYLOR` | `107_Acoustic_G_IR_Taylor 414 57v Pz1` | acoustic alternative |
 
-Factory contents being replaced, for reference if a restore is ever needed. Slots 1-9 were
-read directly from the `Save to Device` slot dropdown; 10-20 are the matching
-slot-numbered filenames in `cabFile` and have not been read off the device yet:
+Factory contents being replaced, for reference if a restore is ever needed. All twenty were
+later read straight out of the pedal's flash over USB MIDI SysEx and confirmed, so the
+names below are the device's own, not an inference from filenames
+(see [device-validation.md](../docs/reverse-engineering/device-validation.md)):
 
 `1AC-SeVin`, `2JVM_1960_57`, `3V30_MD421`, `4G12-EVH_CT`, `5HIFI_OK`, `6WANGS212_ECM`,
 `7VOX_AC30`, `8FRMAN112`, `9MeOSick-III`, then `10SoldSC412`, `11FD_TW1980`, `12MESA_412`,
