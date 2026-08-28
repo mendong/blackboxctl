@@ -64,9 +64,41 @@ A backup of the library as it was before this change is kept outside the reposit
   is byte-identical (SHA-256 `0cafcee0…3e4e2e`) to the file in ML Sound Lab's own free
   Dropbox giveaway, so the pack copy is the genuine IR.
 
-IR format note: the ML Best IR is 48 kHz / 24-bit mono / 1.365 s (65536 samples). The
-factory BlackBox IRs are only about 0.043 s (2048 samples) and the previously installed
-third-party IRs are 0.2 s. The device accepts all three lengths.
+### IR format, measured rather than assumed
+
+M-VAVE's own spec line, in the Korean manual and the official product copy, is
+`44.1K/24Bit mono WAV, 1024 sampling points`. That line is not literally accurate about
+length: the pedal's own factory IRs measure **2048** frames, not 1024. Treat the spec as a
+statement of intent, not a hard contract.
+
+What is actually installed, measured with `wave`:
+
+| | frames | duration | note |
+| --- | ---: | ---: | --- |
+| factory `2JVM_1960_57` | 2048 | 46 ms | 44.1 kHz, 24-bit, mono |
+| factory `7VOX_AC30` | 2048 | 46 ms | 44.1 kHz, **32-bit float** |
+| `01A ML Best IR` | 65536 | 1365 ms | **48 kHz**, 24-bit, mono |
+
+So the pedal is demonstrably running a 32-bit float factory IR and a 48 kHz user IR, which
+means it converts rather than rejects. It cannot be storing 1365 ms, so long IRs are
+certainly being shortened somewhere in the upload path.
+
+**This matters for the slot map below.** Of the 19 IRs mapped to slots, only 7 match the
+vendor spec exactly. 7 are **stereo** and 5 are **48 kHz**:
+
+- stereo: slots 2, 3, 4, 8, 9, 11, 12
+- 48 kHz: slots 1, 5, 15, 16, 18
+- fully conforming: slots 6, 10, 13, 14, 17, 19, 20
+
+Slot 1 proves 48 kHz survives the trip, because it is the ML Best IR and it is what both
+community sources actually play through. Stereo is the untested risk: nothing here
+establishes which channel the pedal keeps, or whether it sums them. If a slot sounds thin,
+phasey, or quieter than its neighbours, check this table first — a stereo source is the
+prime suspect, and converting it to 44.1 kHz 24-bit mono before installing is the fix.
+
+Because the truncation point is unknown, prefer IRs whose useful energy is early. Most of a
+guitar cabinet's character lives in the first 20–50 ms, which is why the heavily truncated
+ML Best IR still sounds right.
 
 ## Slot reservations
 
