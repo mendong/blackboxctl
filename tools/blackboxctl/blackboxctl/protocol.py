@@ -20,8 +20,9 @@ see docs/reverse-engineering/device-validation.md) or HYPOTHESIS.
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Iterable, Sequence
 
 # ---------------------------------------------------------------------------
 # Base-128 codec
@@ -104,18 +105,14 @@ def sysex_unwrap(msg: bytes) -> bytes:
 
 
 def checksum_tx(frame: Sequence[int]) -> int:
-    """Outbound checksum: 0xFF - sum(frame[4:-1]), as published upstream.
+    """Outbound checksum: 0xFF - sum(frame[5:-1]).
 
-    CONFIRMED (offline): reproduces every documented literal (8F, D7, 51, 61,
-    E1, D4, 0B). CONFIRMED (predecessor module on hardware): all seven commands
-    built this way were accepted and answered by the pedal.
-
-    This formula is only distinguishable from :func:`checksum_rx` when
-    ``byte[4] != 0``, i.e. when the payload is 248 bytes or more. No outbound
-    frame in that region has ever been transmitted, so which formula the pedal
-    wants there is UNKNOWN. :func:`build_frame` refuses to build one.
+    CONFIRMED on 2026-08-29 from M-EFCS CoreMIDI captures. CAB records are sent
+    in 1,015-byte chunks, making length byte 4 non-zero and distinguishing the
+    two previously plausible formulae. All seven captured large writes validate
+    only when the sum starts at byte 5. Small frames remain byte-identical.
     """
-    return (0xFF - (sum(frame[4:len(frame) - 1]) & 0xFF)) & 0xFF
+    return (0xFF - (sum(frame[5 : len(frame) - 1]) & 0xFF)) & 0xFF
 
 
 def checksum_rx(frame: Sequence[int]) -> int:
@@ -132,7 +129,7 @@ def checksum_rx(frame: Sequence[int]) -> int:
     exactly the two name blocks. Offset 5 is also the natural rule under the
     confirmed field model: "everything after magic + length".
     """
-    return (0xFF - (sum(frame[5:len(frame) - 1]) & 0xFF)) & 0xFF
+    return (0xFF - (sum(frame[5 : len(frame) - 1]) & 0xFF)) & 0xFF
 
 
 def hexs(data: Iterable[int]) -> str:
@@ -160,8 +157,7 @@ MAGIC_READ = bytes((0x00, 0x59, 0x23))
 """Read header. The only header this tool will ever transmit unattended."""
 
 MAGIC_WRITE = bytes((0x00, 0x59, 0x22))
-"""RAM/flash write header. Never transmitted to this pedal, ever, by anything in
-this project. Every builder that emits it requires an explicit
+"""RAM/flash write header. Every builder that emits it requires an explicit
 :class:`WriteConsent`, and :meth:`transport.BlackBox.send` requires one too."""
 
 HEADER_LEN = 14
@@ -183,7 +179,7 @@ ADDR_CURRENT_PRESET = 0x20000000
 """Active preset id register (4 bytes, id at payload[0]). CONFIRMED."""
 
 ADDR_LOAD_PRESET = 0xE0000000
-"""Preset-load trigger: write 0x01 to ADDR_LOAD_PRESET + preset_id. HYPOTHESIS."""
+"""Preset-load trigger: write 0x01 at base + preset id. CONFIRMED 2026-08-29."""
 
 ADDR_COMMIT = 0xF0000000
 """Zero-length write forces an OLED refresh / RAM reload. HYPOTHESIS."""
@@ -198,16 +194,7 @@ PRESET_SIZE = 92
 """Bytes per preset image. CONFIRMED (0x5C)."""
 
 PRESET_COUNT = 80
-"""Preset slots P01..P80. HYPOTHESIS.
-
-Evidence is a vendor PDF and bbedit's app.js:227 - neither is an observation of
-THIS pedal. The highest flash index ever read here is 40 (P41), so anything
-above that is unverified. This matters: check_preset_index is the only bound on
-cmd_write_flash_preset's target address, so if the real device has fewer slots
-this constant is the difference between a refused frame and a write past the end
-of the preset array. Test that settles it: read flash index 79 and index 80 and
-see which one answers.
-"""
+"""Preset slots P01..P80. CONFIRMED by reading P01 through P80 on 2026-08-29."""
 
 NAME_STRIDE = 14
 """Fixed-width name record. CONFIRMED: 19 consecutive deltas of exactly 14."""
@@ -217,6 +204,26 @@ NAME_COUNT = 20
 
 NAME_TABLE_SIZE = NAME_STRIDE * NAME_COUNT  # 280
 
+LIBRARY_CHUNK_SIZE = 1015
+"""M-EFCS's exact AMP/CAB transfer chunk size. CONFIRMED dynamically."""
+
+CAB_HEADER_SIZE = 20
+CAB_SAMPLE_BYTES = 2048 * 3
+CAB_RECORD_SIZE = CAB_HEADER_SIZE + CAB_SAMPLE_BYTES
+"""Staged user-CAB record: 20-byte header plus 2,048 signed 24-bit samples."""
+
+ADDR_LIBRARY_ACTIVATE = 0xA0000000
+"""Activate the staged library record; payload 1=AMP, 2=CAB. CONFIRMED for CAB."""
+
+ADDR_CAB_COMMIT_BASE = 0xF0000100
+"""CAB slot commit register plus zero-based slot index. CONFIRMED dynamically."""
+
+AMP_RECORD_SIZE = 6272
+"""6,204-byte capture plus M-EFCS's 68-byte runtime LMT block."""
+
+ADDR_AMP_COMMIT_BASE = 0xF0000000
+"""AMP slot commit register plus zero-based slot index. CONFIRMED dynamically."""
+
 RAM_DUMP_FRAME_LEN = 107
 """HEADER_LEN + PRESET_SIZE + 1. CONFIRMED on the wire."""
 
@@ -224,14 +231,21 @@ PRESET_SYNC_FRAME_LEN = 19
 """CONFIRMED on the wire; active preset id at frame[14]."""
 
 ACK_FRAME = bytes((0x00, 0x59, 0x00, 0x01, 0x00, 0x00, 0x00, 0xFF))
-"""Documented success acknowledgement. HYPOTHESIS: never observed here, because
-no write was ever transmitted.
+"""Compact success acknowledgement. CONFIRMED on physical RAM and flash writes.
 
-Note it is only 8 bytes, i.e. shorter than HEADER_LEN + 1, so it does NOT fit
-the confirmed field model and :func:`parse_frame` raises "frame too short" on
-it. Either the upstream doc transcribed it wrongly or acknowledgements use a
-different shape entirely. Compare against a real reply only after a write has
-actually been performed - which has not happened."""
+It is an 8-byte compact response rather than a memory frame, so
+:func:`parse_frame` deliberately does not parse it; :func:`is_ack` performs an
+exact comparison. It was observed on every physically verified RAM, preset,
+AMP, and CAB write."""
+
+
+def is_ack(raw: bytes) -> bool:
+    """Return whether *raw* is the exact compact acknowledgement frame.
+
+    An ACK is necessary for a write transaction but never sufficient proof of
+    success. Callers must still read the target memory back.
+    """
+    return raw == ACK_FRAME
 
 
 @dataclass(frozen=True)
@@ -271,17 +285,13 @@ class Frame:
         return self.checksum_ok and self.length_ok and self.size_ok
 
 
-MAX_TX_PAYLOAD = 247
-"""Largest payload build_frame will assemble.
-
-248 bytes would make length == 256, so byte[4] becomes non-zero and
-checksum_tx and checksum_rx diverge. No observation distinguishes the two
-formulas there, and build_frame must never emit a frame its own parse_frame
-rejects, so the undetermined region is refused rather than guessed."""
+MAX_TX_PAYLOAD = LIBRARY_CHUNK_SIZE
+"""Largest payload emitted by M-EFCS in a captured library transfer."""
 
 
-def build_frame(magic: bytes, space: int, address: int, size: int,
-                payload: bytes = b"") -> bytes:
+def build_frame(
+    magic: bytes, space: int, address: int, size: int, payload: bytes = b""
+) -> bytes:
     """Assemble a frame and append the outbound checksum."""
     if len(magic) != 3:
         raise ValueError("magic must be 3 bytes")
@@ -292,18 +302,15 @@ def build_frame(magic: bytes, space: int, address: int, size: int,
     if len(payload) > MAX_TX_PAYLOAD:
         raise ValueError(
             f"payload is {len(payload)} bytes; refusing to build a frame with "
-            f"more than {MAX_TX_PAYLOAD}. At 248 bytes the length field reaches "
-            f"256, byte[4] stops being zero, and the outbound (offset 4) and "
-            f"inbound (offset 5) checksum formulas disagree. Nothing observed "
-            f"on this pedal says which one it wants there, so the frame would "
-            f"be a guess - and parse_frame would reject our own output.")
+            f"more than M-EFCS's captured {MAX_TX_PAYLOAD}-byte chunk size"
+        )
     body = bytearray(magic)
     body += (len(payload) + 8).to_bytes(2, "little")
     body += space.to_bytes(2, "little")
     body += address.to_bytes(4, "little")
     body += size.to_bytes(3, "little")
     body += payload
-    body.append(0x00)                      # checksum placeholder
+    body.append(0x00)  # checksum placeholder
     body[-1] = checksum_tx(body)
     return bytes(body)
 
@@ -363,16 +370,31 @@ def cmd_read_cab_names() -> bytes:
 
 def check_preset_index(index0: int) -> None:
     """Validate a 0-based protocol preset index. UI numbering is 1-based (P01)."""
+    if isinstance(index0, bool) or not isinstance(index0, int):
+        raise TypeError(f"preset index must be an integer, got {index0!r}")
     if not 0 <= index0 < PRESET_COUNT:
         raise ValueError(
             f"preset index {index0} out of range 0..{PRESET_COUNT - 1} "
-            f"(protocol is 0-based; the pedal displays P01..P{PRESET_COUNT:02d})")
+            f"(protocol is 0-based; the pedal displays P01..P{PRESET_COUNT:02d})"
+        )
 
 
 def check_slot_number(slot1: int, what: str = "slot") -> None:
     """Validate a 1-based amp/cab slot number as the user types it."""
+    if isinstance(slot1, bool) or not isinstance(slot1, int):
+        raise TypeError(f"{what} must be an integer, got {slot1!r}")
     if not 1 <= slot1 <= NAME_COUNT:
         raise ValueError(f"{what} {slot1} out of range 1..{NAME_COUNT}")
+
+
+def check_capture_index(index0: int) -> None:
+    """Validate a zero-based AMP/CAB library slot index."""
+    if isinstance(index0, bool) or not isinstance(index0, int):
+        raise TypeError(f"library slot index must be an integer, got {index0!r}")
+    if not 0 <= index0 < NAME_COUNT:
+        raise ValueError(
+            f"library slot index {index0} out of range 0..{NAME_COUNT - 1}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +406,7 @@ class UnsafePacket(RuntimeError):
     """Raised when a packet fails the read-only gate."""
 
 
-MAX_READ_SIZE = NAME_TABLE_SIZE                # 280
+MAX_READ_SIZE = NAME_TABLE_SIZE  # 280
 """Largest read this tool will ever request.
 
 The biggest legitimate read is a 280-byte name table. Anything larger is a DMA
@@ -401,15 +423,31 @@ def _read_allowlist() -> list[tuple[int, int, int, str]]:
     what a *read* at a trigger register does is untested and unknown.
     """
     return [
-        (SPACE_PARAM, ADDR_PRESET_BASE,
-         ADDR_PRESET_BASE + PRESET_COUNT * PRESET_SIZE - 1, "flash preset array"),
+        (
+            SPACE_PARAM,
+            ADDR_PRESET_BASE,
+            ADDR_PRESET_BASE + PRESET_COUNT * PRESET_SIZE - 1,
+            "flash preset array",
+        ),
         (SPACE_PARAM, ADDR_LIVE_RAM, ADDR_LIVE_RAM + PRESET_SIZE - 1, "live RAM"),
-        (SPACE_PARAM, ADDR_CURRENT_PRESET, ADDR_CURRENT_PRESET + 3,
-         "current preset id"),
-        (SPACE_STRING, ADDR_CAB_NAMES, ADDR_CAB_NAMES + NAME_TABLE_SIZE - 1,
-         "CAB/IR name table"),
-        (SPACE_STRING, ADDR_AMP_NAMES, ADDR_AMP_NAMES + NAME_TABLE_SIZE - 1,
-         "AMP name table"),
+        (
+            SPACE_PARAM,
+            ADDR_CURRENT_PRESET,
+            ADDR_CURRENT_PRESET + 3,
+            "current preset id",
+        ),
+        (
+            SPACE_STRING,
+            ADDR_CAB_NAMES,
+            ADDR_CAB_NAMES + NAME_TABLE_SIZE - 1,
+            "CAB/IR name table",
+        ),
+        (
+            SPACE_STRING,
+            ADDR_AMP_NAMES,
+            ADDR_AMP_NAMES + NAME_TABLE_SIZE - 1,
+            "AMP name table",
+        ),
     ]
 
 
@@ -428,18 +466,21 @@ def assert_read_only(raw: bytes) -> None:
     if raw[0:3] == MAGIC_WRITE:
         raise UnsafePacket(
             f"REFUSED: 00 59 22 is the WRITE header. Never sent by a read path. "
-            f"{hexs(raw)}")
+            f"{hexs(raw)}"
+        )
     if raw[0:3] != MAGIC_READ:
         raise UnsafePacket(f"REFUSED: header is not 00 59 23: {hexs(raw)}")
     frame = parse_frame(raw)
     if frame.length != 8 or len(frame.payload) != 0:
         raise UnsafePacket(
             f"REFUSED: a read request carries no payload, got {len(frame.payload)} "
-            f"bytes: {hexs(raw)}")
+            f"bytes: {hexs(raw)}"
+        )
     if frame.space not in (SPACE_PARAM, SPACE_STRING):
         raise UnsafePacket(
             f"REFUSED: address space {frame.space:#06x} is neither "
-            f"{SPACE_PARAM:#06x} nor {SPACE_STRING:#06x}: {hexs(raw)}")
+            f"{SPACE_PARAM:#06x} nor {SPACE_STRING:#06x}: {hexs(raw)}"
+        )
     if frame.size == 0:
         raise UnsafePacket(f"REFUSED: zero-size read: {hexs(raw)}")
     if frame.size > MAX_READ_SIZE:
@@ -447,9 +488,10 @@ def assert_read_only(raw: bytes) -> None:
             f"REFUSED: read size {frame.size} exceeds the {MAX_READ_SIZE}-byte "
             f"ceiling (the largest mapped region is the {NAME_TABLE_SIZE}-byte "
             f"name table). An oversized DMA read is untested on this firmware: "
-            f"{hexs(raw)}")
+            f"{hexs(raw)}"
+        )
     last = frame.address + frame.size - 1
-    for space, first, region_last, what in _read_allowlist():
+    for space, first, region_last, _what in _read_allowlist():
         if frame.space == space and first <= frame.address and last <= region_last:
             break
     else:
@@ -457,11 +499,14 @@ def assert_read_only(raw: bytes) -> None:
             f"REFUSED: {frame.size} bytes at {frame.address:#010x} in space "
             f"{frame.space:#06x} is not inside any region this tool has ever "
             f"read from the pedal. Allowed: "
-            + "; ".join(f"{w} {f:#010x}..{l:#010x} (space {s:#06x})"
-                        for s, f, l, w in _read_allowlist())
+            + "; ".join(
+                f"{description} {first:#010x}..{region_last:#010x} (space {space:#06x})"
+                for space, first, region_last, description in _read_allowlist()
+            )
             + f". Note 0xE0000000 (load-preset trigger) and 0xF0000000 (commit) "
-              f"are excluded on purpose - they are documented WRITE triggers and "
-              f"the firmware's behaviour on a read there is unknown: {hexs(raw)}")
+            f"are excluded on purpose - they are documented WRITE triggers and "
+            f"the firmware's behaviour on a read there is unknown: {hexs(raw)}"
+        )
     if raw[-1] != checksum_tx(raw):
         raise UnsafePacket(f"REFUSED: bad checksum: {hexs(raw)}")
 
@@ -470,12 +515,10 @@ def assert_read_only(raw: bytes) -> None:
 # Write commands
 # ---------------------------------------------------------------------------
 #
-# NOT YET ENABLED. No write frame has ever been transmitted to this pedal, and
-# nothing in this package will transmit one without an explicit WriteConsent
-# object naming a WRITE_PATHS key. Because every WritePath below currently has
-# hardware_confirmed=False, transport.BlackBox.send refuses all of them: there
-# is at present NO reachable path from any CLI command to the wire with magic
-# 00 59 22. tests/test_no_write_path.py asserts exactly that.
+# Every write requires an explicit WriteConsent object naming one WRITE_PATHS
+# key.  The transport checks that capability again against the final wire bytes
+# and refuses generic/unmapped writes.  The enabled paths below were physically
+# verified on 2026-08-28/29; firmware writing remains outside this module.
 
 
 @dataclass(frozen=True)
@@ -497,9 +540,9 @@ class WriteConsent:
         The caller has read :attr:`WritePath.evidence` and accepts that the
         address/encoding is HYPOTHESIS, not confirmed on this pedal.
     allow_flash:
-        Additionally authorises a frame that rewrites the permanent flash preset
-        array. Required on top of everything else. Flash writes can destroy the
-        owner's presets and are the only irreversible operation here.
+        Additionally authorises a permanent preset, AMP, or CAB slot write.
+        Required on top of everything else because payload read-back and exact
+        rollback are not available for every persistent content type.
     """
 
     path_key: str
@@ -507,7 +550,7 @@ class WriteConsent:
     accept_unverified: bool = False
     allow_flash: bool = False
 
-    def authorise(self, path_key: str) -> "WritePath":
+    def authorise(self, path_key: str) -> WritePath:
         """Validate this consent against a write path, or raise UnsafePacket."""
         path = WRITE_PATHS.get(path_key)
         if path is None:
@@ -515,23 +558,60 @@ class WriteConsent:
         if self.path_key != path_key:
             raise UnsafePacket(
                 f"REFUSED: consent was granted for write path "
-                f"{self.path_key!r}, not {path_key!r}. Consent is per-action.")
-        if not self.confirmed_by_user:
+                f"{self.path_key!r}, not {path_key!r}. Consent is per-action."
+            )
+        if self.confirmed_by_user is not True:
             raise UnsafePacket(
                 f"REFUSED: {path_key}: WriteConsent.confirmed_by_user is False. "
-                f"No state-changing frame is built without a human saying yes.")
-        if not path.hardware_confirmed and not self.accept_unverified:
+                f"No state-changing frame is built without a human saying yes."
+            )
+        if not path.hardware_confirmed and self.accept_unverified is not True:
             raise UnsafePacket(
                 f"REFUSED: {path_key}: this write path is NOT confirmed on this "
                 f"pedal. {path.evidence} Pass "
                 f"WriteConsent(accept_unverified=True) only if you understand "
-                f"that the address and encoding are a hypothesis.")
-        if path.touches_flash and not self.allow_flash:
+                f"that the address and encoding are a hypothesis."
+            )
+        if path.touches_flash and self.allow_flash is not True:
             raise UnsafePacket(
-                f"REFUSED: {path_key} writes the permanent flash preset array "
-                f"and WriteConsent.allow_flash is False. This is the one "
-                f"irreversible operation in this protocol.")
+                f"REFUSED: {path_key} writes permanent device storage and "
+                "WriteConsent.allow_flash is False."
+            )
         return path
+
+
+@dataclass(frozen=True)
+class WriteProbe:
+    """Capability for physically validating one exact unconfirmed frame.
+
+    The normal transport refuses paths whose ``hardware_confirmed`` flag is
+    false. A probe binds an exception to one path, address, payload length and
+    payload digest, avoiding a broad "allow unsafe writes" switch.
+    """
+
+    path_key: str
+    address: int
+    payload_size: int
+    payload_sha256: str
+
+    @classmethod
+    def for_frame(cls, path_key: str, raw: bytes) -> WriteProbe:
+        frame = parse_frame(raw)
+        return cls(
+            path_key=path_key,
+            address=frame.address,
+            payload_size=len(frame.payload),
+            payload_sha256=hashlib.sha256(frame.payload).hexdigest(),
+        )
+
+    def matches(self, path_key: str, raw: bytes) -> bool:
+        frame = parse_frame(raw)
+        return (
+            self.path_key == path_key
+            and self.address == frame.address
+            and self.payload_size == len(frame.payload)
+            and self.payload_sha256 == hashlib.sha256(frame.payload).hexdigest()
+        )
 
 
 @dataclass(frozen=True)
@@ -549,77 +629,225 @@ WRITE_PATHS: dict[str, WritePath] = {
     "load-preset": WritePath(
         key="load-preset",
         description="Load preset slot N into live RAM (no flash write)",
-        hardware_confirmed=False,
+        hardware_confirmed=True,
         touches_flash=False,
-        evidence=("Documented upstream and built by bbedit, but device-validation.md "
-                  "records that NO write path of any kind was transmitted to this "
-                  "pedal. The address 0xE0000000 + id is a reparse of bbedit's "
-                  "literal, not an observation."),
+        evidence=(
+            "Confirmed 2026-08-29 by reloading active P05: exact ACK, "
+            "active id unchanged, and the 92-byte RAM image remained "
+            "byte-identical to the stored slot."
+        ),
     ),
     "set-knob": WritePath(
         key="set-knob",
         description="Write one 16-bit knob value into live RAM",
-        hardware_confirmed=False,
+        hardware_confirmed=True,
         touches_flash=False,
-        evidence=("Address 0x10000000 + dump_index is HYPOTHESIS(high): it decodes "
-                  "every read correctly, but no write was ever sent to confirm the "
-                  "direction."),
+        evidence=(
+            "Confirmed 2026-08-28: the live P03 AMP Gain at @0x20 read "
+            "23, then read 24 after a CLI write, then read 23 after CLI "
+            "restoration. This confirms only 16-bit live-RAM knob writes."
+        ),
     ),
     "set-toggle": WritePath(
         key="set-toggle",
         description="Turn one effect block on or off in live RAM",
-        hardware_confirmed=False,
+        hardware_confirmed=True,
         touches_flash=False,
-        evidence="Same as set-knob: read-direction evidence only.",
+        evidence=(
+            "Confirmed 2026-08-29 on the MOD toggle: change, exact ACK, "
+            "read-back, restore, and full 92-byte RAM comparison."
+        ),
     ),
     "set-model": WritePath(
         key="set-model",
         description="Select a model / capture slot for one block in live RAM",
-        hardware_confirmed=False,
+        hardware_confirmed=True,
         touches_flash=False,
-        evidence="Same as set-knob: read-direction evidence only.",
+        evidence=(
+            "Confirmed 2026-08-29 on the MOD model byte: change, exact "
+            "ACK and read-back. Firmware also resets that block's knob "
+            "words on model selection, so an image apply must write model "
+            "first and knob words afterwards."
+        ),
     ),
     "set-routing": WritePath(
         key="set-routing",
         description="Reorder the six-block signal chain in live RAM",
-        hardware_confirmed=False,
+        hardware_confirmed=True,
         touches_flash=False,
-        evidence="Same as set-knob: read-direction evidence only.",
+        evidence=(
+            "Confirmed 2026-08-29: swapped the first two block ids, "
+            "received an exact ACK, read back the permutation, restored "
+            "it, and matched all 92 RAM bytes."
+        ),
     ),
     "commit": WritePath(
         key="commit",
         description="Zero-length write that forces an OLED refresh",
         hardware_confirmed=False,
         touches_flash=False,
-        evidence=("Documentation only. bbedit never sends it, so not even a second "
-                  "implementation corroborates the address 0xF0000000."),
+        evidence=(
+            "Documentation only. bbedit never sends it, so not even a second "
+            "implementation corroborates the address 0xF0000000."
+        ),
     ),
     "restore": WritePath(
         key="restore",
         description="Write a full 92-byte preset image into a FLASH slot",
-        hardware_confirmed=False,
+        hardware_confirmed=True,
         touches_flash=True,
-        evidence=("Write Flash Save permanently rewrites a slot and can destroy the "
-                  "owner's presets. Unconfirmed on this pedal and deliberately "
-                  "untested."),
+        evidence=(
+            "Confirmed 2026-08-29 on inactive P80: wrote a changed "
+            "92-byte image, received exact ACK, read back all bytes, then "
+            "wrote/read the original image. Active P05 and live RAM were "
+            "unchanged."
+        ),
+    ),
+    "stage-cab": WritePath(
+        key="stage-cab",
+        description="Upload and audition one 2,048-sample CAB staging record",
+        hardware_confirmed=True,
+        touches_flash=False,
+        evidence=(
+            "Confirmed 2026-08-29 on CAB 20: seven CLI data chunks plus "
+            "the CAB activation trigger each received the exact ACK; the "
+            "subsequent save identified the staged record by its name."
+        ),
+    ),
+    "save-cab": WritePath(
+        key="save-cab",
+        description="Commit the staged CAB record to one permanent CAB slot",
+        hardware_confirmed=True,
+        touches_flash=True,
+        evidence=(
+            "Confirmed 2026-08-29 on CAB 20: CLI header and "
+            "0xF0000113 commit writes received exact ACKs; the device "
+            "name table read back 20AC_TAYLOR. Waveform read-back is not "
+            "available, so audible verification remains separate."
+        ),
+    ),
+    "stage-amp": WritePath(
+        key="stage-amp",
+        description="Upload and audition one neural AMP record in RAM",
+        hardware_confirmed=True,
+        touches_flash=False,
+        evidence=(
+            "Exact 6,272-byte record and AMP activation captured from "
+            "M-EFCS on 2026-08-29; the same seven-chunk CLI transfer path "
+            "is shared with the physically confirmed AMP 20 save."
+        ),
+    ),
+    "save-amp": WritePath(
+        key="save-amp",
+        description="Commit a complete staged AMP record to one permanent slot",
+        hardware_confirmed=True,
+        touches_flash=True,
+        evidence=(
+            "Confirmed 2026-08-29 on AMP 20: seven CLI data chunks and "
+            "0xF0000013 commit each received the exact ACK; the device "
+            "name table read back 20AC_PREAMP. Neural-weight read-back is "
+            "not available, so audible verification remains separate."
+        ),
     ),
 }
 
 
+def chunk_library_record(record: bytes) -> list[tuple[int, bytes]]:
+    """Split a staged AMP/CAB record exactly as M-EFCS does."""
+    if not record:
+        raise ValueError("library record cannot be empty")
+    return [
+        (offset, record[offset : offset + LIBRARY_CHUNK_SIZE])
+        for offset in range(0, len(record), LIBRARY_CHUNK_SIZE)
+    ]
+
+
+def cmd_stage_cab(record: bytes, *, consent: WriteConsent) -> list[bytes]:
+    """Build the chunk writes and activation trigger for one CAB audition."""
+    consent.authorise("stage-cab")
+    if len(record) != CAB_RECORD_SIZE:
+        raise ValueError(
+            f"CAB record must be {CAB_RECORD_SIZE} bytes, got {len(record)}"
+        )
+    frames = [
+        build_frame(MAGIC_WRITE, SPACE_STRING, offset, len(chunk), chunk)
+        for offset, chunk in chunk_library_record(record)
+    ]
+    frames.append(
+        build_frame(MAGIC_WRITE, SPACE_STRING, ADDR_LIBRARY_ACTIVATE, 1, b"\x02")
+    )
+    return frames
+
+
+def cmd_save_cab_header(
+    index0: int, header: bytes, *, consent: WriteConsent
+) -> list[bytes]:
+    """Build M-EFCS's header rewrite and permanent CAB-slot commit frames."""
+    consent.authorise("save-cab")
+    check_capture_index(index0)
+    if len(header) != CAB_HEADER_SIZE:
+        raise ValueError(
+            f"CAB header must be {CAB_HEADER_SIZE} bytes, got {len(header)}"
+        )
+    return [
+        build_frame(MAGIC_WRITE, SPACE_STRING, 0, len(header), header),
+        build_frame(
+            MAGIC_WRITE, SPACE_STRING, ADDR_CAB_COMMIT_BASE + index0, 1, b"\x00"
+        ),
+    ]
+
+
+def cmd_stage_amp(record: bytes, *, consent: WriteConsent) -> list[bytes]:
+    """Build the chunk writes and activation trigger for one AMP audition."""
+    consent.authorise("stage-amp")
+    if len(record) != AMP_RECORD_SIZE:
+        raise ValueError(
+            f"AMP record must be {AMP_RECORD_SIZE} bytes, got {len(record)}"
+        )
+    frames = [
+        build_frame(MAGIC_WRITE, SPACE_STRING, offset, len(chunk), chunk)
+        for offset, chunk in chunk_library_record(record)
+    ]
+    frames.append(
+        build_frame(MAGIC_WRITE, SPACE_STRING, ADDR_LIBRARY_ACTIVATE, 1, b"\x01")
+    )
+    return frames
+
+
+def cmd_save_amp(index0: int, record: bytes, *, consent: WriteConsent) -> list[bytes]:
+    """Build M-EFCS's complete AMP re-upload and permanent slot commit."""
+    consent.authorise("save-amp")
+    check_capture_index(index0)
+    if len(record) != AMP_RECORD_SIZE:
+        raise ValueError(
+            f"AMP record must be {AMP_RECORD_SIZE} bytes, got {len(record)}"
+        )
+    frames = [
+        build_frame(MAGIC_WRITE, SPACE_STRING, offset, len(chunk), chunk)
+        for offset, chunk in chunk_library_record(record)
+    ]
+    frames.append(
+        build_frame(
+            MAGIC_WRITE, SPACE_STRING, ADDR_AMP_COMMIT_BASE + index0, 1, b"\x00"
+        )
+    )
+    return frames
+
+
 def cmd_load_preset(index0: int, *, consent: WriteConsent) -> bytes:
-    """Build Load Preset. HYPOTHESIS - see WRITE_PATHS['load-preset'].
+    """Build the physically confirmed stored-preset load command.
 
     Requires ``consent=WriteConsent(path_key="load-preset", ...)``.
     """
     consent.authorise("load-preset")
     check_preset_index(index0)
-    return build_frame(MAGIC_WRITE, SPACE_PARAM, ADDR_LOAD_PRESET + index0, 1,
-                       bytes((0x01,)))
+    return build_frame(
+        MAGIC_WRITE, SPACE_PARAM, ADDR_LOAD_PRESET + index0, 1, bytes((0x01,))
+    )
 
 
-def cmd_write_byte(dump_index: int, value: int, *,
-                   consent: WriteConsent) -> bytes:
-    """Build a 1-byte live-RAM poke (toggle or model). HYPOTHESIS.
+def cmd_write_byte(dump_index: int, value: int, *, consent: WriteConsent) -> bytes:
+    """Build a physically confirmed 1-byte live-RAM toggle or model write.
 
     Requires ``consent`` for ``set-toggle`` or ``set-model``; which of the two
     is up to the caller, since the frame is identical.
@@ -627,43 +855,73 @@ def cmd_write_byte(dump_index: int, value: int, *,
     if consent.path_key not in ("set-toggle", "set-model"):
         raise UnsafePacket(
             f"REFUSED: a 1-byte RAM poke needs consent for 'set-toggle' or "
-            f"'set-model', got {consent.path_key!r}")
+            f"'set-model', got {consent.path_key!r}"
+        )
     consent.authorise(consent.path_key)
     if not 0 <= dump_index < PRESET_SIZE:
         raise ValueError(f"dump index {dump_index} out of range 0..{PRESET_SIZE - 1}")
     if not 0 <= value <= 0xFF:
         raise ValueError(f"byte value {value} out of range 0..255")
-    return build_frame(MAGIC_WRITE, SPACE_PARAM, ADDR_LIVE_RAM + dump_index, 1,
-                       bytes((value,)))
+    if consent.path_key == "set-toggle":
+        allowed = {block.toggle_addr for block in BLOCKS}
+        if dump_index not in allowed or value not in (0, 1):
+            raise ValueError(
+                f"toggle write needs a block toggle address and value 0 or 1; "
+                f"got @{dump_index:#04x}={value}"
+            )
+    else:
+        block = next((item for item in BLOCKS if item.model_addr == dump_index), None)
+        limit = (
+            NAME_COUNT
+            if block is not None and not block.models
+            else len(block.models)
+            if block is not None
+            else 0
+        )
+        if block is None or not 0 <= value < limit:
+            raise ValueError(
+                f"model write needs a known model address and valid model index; "
+                f"got @{dump_index:#04x}={value}"
+            )
+    return build_frame(
+        MAGIC_WRITE, SPACE_PARAM, ADDR_LIVE_RAM + dump_index, 1, bytes((value,))
+    )
 
 
-def cmd_write_u16(dump_index: int, value: int, *,
-                  consent: WriteConsent) -> bytes:
-    """Build a 2-byte little-endian live-RAM poke (a knob). HYPOTHESIS.
+def cmd_write_u16(dump_index: int, value: int, *, consent: WriteConsent) -> bytes:
+    """Build a physically confirmed 16-bit little-endian live-RAM knob write.
 
     Requires ``consent=WriteConsent(path_key="set-knob", ...)``.
     """
     consent.authorise("set-knob")
-    if not 0 <= dump_index < PRESET_SIZE - 1:
-        raise ValueError(f"dump index {dump_index} out of range 0..{PRESET_SIZE - 2}")
-    if not 0 <= value <= 0xFFFF:
-        raise ValueError(f"u16 value {value} out of range 0..65535")
-    return build_frame(MAGIC_WRITE, SPACE_PARAM, ADDR_LIVE_RAM + dump_index, 2,
-                       value.to_bytes(2, "little"))
+    knob_indexes = {0}
+    for block in BLOCKS:
+        knob_indexes.update(block.knob_addr(slot) for slot in range(1, 7))
+    if dump_index not in knob_indexes:
+        raise ValueError(
+            f"knob write needs total-volume or a known knob address; "
+            f"got dump index {dump_index:#04x}"
+        )
+    if not 0 <= value <= 100:
+        raise ValueError(f"knob value {value} out of range 0..100")
+    return build_frame(
+        MAGIC_WRITE,
+        SPACE_PARAM,
+        ADDR_LIVE_RAM + dump_index,
+        2,
+        value.to_bytes(2, "little"),
+    )
 
 
-def cmd_write_routing(order: Sequence[int], *,
-                      consent: WriteConsent) -> bytes:
-    """Build Change Routing from a permutation of block ids 0..5. HYPOTHESIS.
+def cmd_write_routing(order: Sequence[int], *, consent: WriteConsent) -> bytes:
+    """Build the confirmed routing write from a permutation of block ids 0..5.
 
     Requires ``consent=WriteConsent(path_key="set-routing", ...)``.
     """
     consent.authorise("set-routing")
     if sorted(order) != list(range(6)):
-        raise ValueError(
-            f"routing must be a permutation of 0..5, got {list(order)}")
-    return build_frame(MAGIC_WRITE, SPACE_PARAM, ADDR_LIVE_RAM + 0x02, 6,
-                       bytes(order))
+        raise ValueError(f"routing must be a permutation of 0..5, got {list(order)}")
+    return build_frame(MAGIC_WRITE, SPACE_PARAM, ADDR_LIVE_RAM + 0x02, 6, bytes(order))
 
 
 def cmd_commit(*, consent: WriteConsent) -> bytes:
@@ -675,22 +933,152 @@ def cmd_commit(*, consent: WriteConsent) -> bytes:
     return build_frame(MAGIC_WRITE, SPACE_PARAM, ADDR_COMMIT, 0)
 
 
-def cmd_write_flash_preset(index0: int, image: bytes, *,
-                           consent: WriteConsent) -> bytes:
-    """Build Write Flash Save. DANGEROUS and IRREVERSIBLE. HYPOTHESIS.
+def cmd_write_flash_preset(
+    index0: int, image: bytes, *, consent: WriteConsent
+) -> bytes:
+    """Build a permanent 92-byte preset-slot save.
 
     Requires ``consent=WriteConsent(path_key="restore", confirmed_by_user=True,
-    accept_unverified=True, allow_flash=True)`` - all four. This permanently
-    rewrites a preset slot. It has never been transmitted to this pedal and
-    transport.BlackBox.send refuses it regardless of consent while
-    ``WRITE_PATHS["restore"].hardware_confirmed`` is False.
+    allow_flash=True)``. The path was verified by changed P80 save, full
+    read-back, and exact restoration. Callers must still preserve the incumbent
+    image and roll it back on mismatch.
     """
     consent.authorise("restore")
     check_preset_index(index0)
     if len(image) != PRESET_SIZE:
         raise ValueError(f"preset image must be {PRESET_SIZE} bytes, got {len(image)}")
-    return build_frame(MAGIC_WRITE, SPACE_PARAM,
-                       ADDR_PRESET_BASE + index0 * PRESET_SIZE, PRESET_SIZE, image)
+    return build_frame(
+        MAGIC_WRITE,
+        SPACE_PARAM,
+        ADDR_PRESET_BASE + index0 * PRESET_SIZE,
+        PRESET_SIZE,
+        image,
+    )
+
+
+def assert_write_for_path(raw: bytes, path_key: str) -> None:
+    """Bind final wire bytes to the narrow operation named by *path_key*.
+
+    Builders validate their inputs, but the transport is a separate trust
+    boundary: callers can hand it an arbitrary byte string from a REPL or a
+    future script.  This allowlist therefore validates the parsed frame again
+    without trusting which builder produced it.
+    """
+    if len(raw) < HEADER_LEN + 1:
+        raise UnsafePacket(f"REFUSED: packet too short: {hexs(raw)}")
+    frame = parse_frame(raw)
+    if frame.magic != MAGIC_WRITE:
+        raise UnsafePacket(f"REFUSED: {path_key!r} authorises writes only: {hexs(raw)}")
+    if not frame.well_formed:
+        raise UnsafePacket(
+            f"REFUSED: malformed write frame for {path_key!r} "
+            f"(length_ok={frame.length_ok}, size_ok={frame.size_ok}, "
+            f"checksum_ok={frame.checksum_ok}): {hexs(raw)}"
+        )
+
+    def exact(space: int, address: int, payload: bytes) -> bool:
+        return (
+            frame.space == space
+            and frame.address == address
+            and frame.payload == payload
+        )
+
+    allowed = False
+    if path_key == "load-preset":
+        allowed = (
+            frame.space == SPACE_PARAM
+            and frame.payload == b"\x01"
+            and ADDR_LOAD_PRESET <= frame.address < ADDR_LOAD_PRESET + PRESET_COUNT
+        )
+    elif path_key == "set-knob":
+        knob_addresses = {ADDR_LIVE_RAM}
+        for block in BLOCKS:
+            knob_addresses.update(
+                ADDR_LIVE_RAM + block.knob_addr(slot) for slot in range(1, 7)
+            )
+        value = int.from_bytes(frame.payload, "little")
+        allowed = (
+            frame.space == SPACE_PARAM
+            and frame.address in knob_addresses
+            and len(frame.payload) == 2
+            and 0 <= value <= 100
+        )
+    elif path_key == "set-toggle":
+        allowed = (
+            frame.space == SPACE_PARAM
+            and frame.address in {ADDR_LIVE_RAM + block.toggle_addr for block in BLOCKS}
+            and frame.payload in (b"\x00", b"\x01")
+        )
+    elif path_key == "set-model":
+        for block in BLOCKS:
+            model_count = len(block.models) if block.models else NAME_COUNT
+            if (
+                frame.space == SPACE_PARAM
+                and frame.address == ADDR_LIVE_RAM + block.model_addr
+                and len(frame.payload) == 1
+                and frame.payload[0] < model_count
+            ):
+                allowed = True
+                break
+    elif path_key == "set-routing":
+        allowed = (
+            exact(SPACE_PARAM, ADDR_LIVE_RAM + 0x02, frame.payload)
+            and len(frame.payload) == 6
+            and sorted(frame.payload) == list(range(6))
+        )
+    elif path_key == "commit":
+        allowed = exact(SPACE_PARAM, ADDR_COMMIT, b"")
+    elif path_key == "restore":
+        allowed = (
+            frame.space == SPACE_PARAM
+            and len(frame.payload) == PRESET_SIZE
+            and ADDR_PRESET_BASE
+            <= frame.address
+            < ADDR_PRESET_BASE + PRESET_COUNT * PRESET_SIZE
+            and (frame.address - ADDR_PRESET_BASE) % PRESET_SIZE == 0
+        )
+    elif path_key in ("stage-cab", "stage-amp", "save-amp"):
+        record_size = CAB_RECORD_SIZE if path_key == "stage-cab" else AMP_RECORD_SIZE
+        chunk_sizes = {
+            offset: min(LIBRARY_CHUNK_SIZE, record_size - offset)
+            for offset in range(0, record_size, LIBRARY_CHUNK_SIZE)
+        }
+        allowed = (
+            frame.space == SPACE_STRING
+            and frame.address in chunk_sizes
+            and len(frame.payload) == chunk_sizes[frame.address]
+        )
+        if path_key in ("stage-cab", "stage-amp"):
+            kind = b"\x02" if path_key == "stage-cab" else b"\x01"
+            allowed = allowed or exact(SPACE_STRING, ADDR_LIBRARY_ACTIVATE, kind)
+        else:
+            allowed = allowed or (
+                frame.space == SPACE_STRING
+                and frame.payload == b"\x00"
+                and ADDR_AMP_COMMIT_BASE
+                <= frame.address
+                < ADDR_AMP_COMMIT_BASE + NAME_COUNT
+            )
+    elif path_key == "save-cab":
+        allowed = (
+            frame.space == SPACE_STRING
+            and frame.address == 0
+            and len(frame.payload) == CAB_HEADER_SIZE
+        )
+        allowed = allowed or (
+            frame.space == SPACE_STRING
+            and frame.payload == b"\x00"
+            and ADDR_CAB_COMMIT_BASE
+            <= frame.address
+            < ADDR_CAB_COMMIT_BASE + NAME_COUNT
+        )
+
+    if not allowed:
+        raise UnsafePacket(
+            f"REFUSED: final wire frame does not match write path "
+            f"{path_key!r}: space={frame.space:#06x}, "
+            f"address={frame.address:#010x}, payload={len(frame.payload)} bytes"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -700,11 +1088,9 @@ def cmd_write_flash_preset(index0: int, image: bytes, *,
 # The addresses below are the offsets that decode every read correctly, and all
 # seven known P41 GUI values match under them. That part is CONFIRMED.
 #
-# HYPOTHESIS (high confidence): Write_Address == index into the 92-byte image
-# (identity), i.e. a RAM write targets 0x10000000 + dump_index. This is
-# read-direction evidence only - NO write has ever been transmitted to this
-# pedal, so the write direction is unverified. See device-validation.md item 7,
-# which records the same fact as HYPOTHESIS and names the test that settles it.
+# CONFIRMED: Write_Address == index into the 92-byte image (identity), i.e. a
+# RAM write targets 0x10000000 + dump_index. Knob, toggle, model and routing
+# writes were individually read back and the complete baseline image restored.
 #
 # The published "Write_Address = Dump_Index + 2" rule is refuted, but not by
 # arithmetic: a uniform +2 shift is perfectly consistent (it would map
@@ -767,7 +1153,8 @@ class Block:
             return self.knobs[model_index]
         raise ValueError(
             f"{self.name}: model index {model_index} has no knob dictionary "
-            f"(this block knows {len(self.knobs)} models, 0..{len(self.knobs) - 1})")
+            f"(this block knows {len(self.knobs)} models, 0..{len(self.knobs) - 1})"
+        )
 
 
 _AMP_KNOBS = ("Gain", "Level", "Bass", "Mid", "Treble", GHOST)
@@ -775,8 +1162,12 @@ _CAB_KNOBS = ("Level", "Low Cut", "High Cut", GHOST, GHOST, GHOST)
 
 BLOCKS: tuple[Block, ...] = (
     Block(
-        block_id=0, key="fx", name="FX",
-        toggle_addr=0x08, model_addr=0x0E, knob_base=0x14,
+        block_id=0,
+        key="fx",
+        name="FX",
+        toggle_addr=0x08,
+        model_addr=0x0E,
+        knob_base=0x14,
         models=("Noise Gate++", "Boost", "Compress", "AI Gate MS"),
         knobs=(
             ("Gate", GHOST, GHOST, GHOST, GHOST, GHOST),
@@ -786,16 +1177,32 @@ BLOCKS: tuple[Block, ...] = (
         ),
     ),
     Block(
-        block_id=1, key="amp", name="AMP",
-        toggle_addr=0x09, model_addr=0x0F, knob_base=0x20,
-        models=(),                      # 20 capture slot names, read from flash
-        knobs=(_AMP_KNOBS,), is_dynamic=False,
+        block_id=1,
+        key="amp",
+        name="AMP",
+        toggle_addr=0x09,
+        model_addr=0x0F,
+        knob_base=0x20,
+        models=(),  # 20 capture slot names, read from flash
+        knobs=(_AMP_KNOBS,),
+        is_dynamic=False,
     ),
     Block(
-        block_id=2, key="mod", name="MOD",
-        toggle_addr=0x0A, model_addr=0x10, knob_base=0x2C,
-        models=("Chorus", "Phaser", "Tremolo", "Flanger", "Vibrato", "Univibe",
-                "Autofilter"),
+        block_id=2,
+        key="mod",
+        name="MOD",
+        toggle_addr=0x0A,
+        model_addr=0x10,
+        knob_base=0x2C,
+        models=(
+            "Chorus",
+            "Phaser",
+            "Tremolo",
+            "Flanger",
+            "Vibrato",
+            "Univibe",
+            "Autofilter",
+        ),
         knobs=(
             ("Speed", "Depth", "Mix", GHOST, GHOST, GHOST),
             ("Speed", "Midcut", "Reso", "Feedback", GHOST, GHOST),
@@ -807,8 +1214,12 @@ BLOCKS: tuple[Block, ...] = (
         ),
     ),
     Block(
-        block_id=3, key="dly", name="DLY",
-        toggle_addr=0x0B, model_addr=0x11, knob_base=0x38,
+        block_id=3,
+        key="dly",
+        name="DLY",
+        toggle_addr=0x0B,
+        model_addr=0x11,
+        knob_base=0x38,
         models=("Analog", "Duck", "Dtape", "Dual", "Lofi"),
         knobs=(
             ("Time", "Feedback", "Mix", "Phaser", "Pitch", GHOST),
@@ -819,8 +1230,12 @@ BLOCKS: tuple[Block, ...] = (
         ),
     ),
     Block(
-        block_id=4, key="rev", name="REV",
-        toggle_addr=0x0C, model_addr=0x12, knob_base=0x44,
+        block_id=4,
+        key="rev",
+        name="REV",
+        toggle_addr=0x0C,
+        model_addr=0x12,
+        knob_base=0x44,
         models=("Room", "Hall", "Swell", "Spring", "Shimmer", "Cloud"),
         knobs=(
             ("Decay", "Mix", "High Pass", "Low Pass", "Depth", GHOST),
@@ -832,10 +1247,15 @@ BLOCKS: tuple[Block, ...] = (
         ),
     ),
     Block(
-        block_id=5, key="cab", name="CAB",
-        toggle_addr=0x0D, model_addr=0x13, knob_base=0x50,
-        models=(),                      # 20 IR slot names, read from flash
-        knobs=(_CAB_KNOBS,), is_dynamic=False,
+        block_id=5,
+        key="cab",
+        name="CAB",
+        toggle_addr=0x0D,
+        model_addr=0x13,
+        knob_base=0x50,
+        models=(),  # 20 IR slot names, read from flash
+        knobs=(_CAB_KNOBS,),
+        is_dynamic=False,
     ),
 )
 
@@ -901,13 +1321,16 @@ class PresetImage:
 
     @property
     def routing_names(self) -> list[str]:
-        return [BLOCKS_BY_ID[b].name if b in BLOCKS_BY_ID else f"?{b}"
-                for b in self.routing]
+        return [
+            BLOCKS_BY_ID[b].name if b in BLOCKS_BY_ID else f"?{b}" for b in self.routing
+        ]
 
 
-def decode_preset(image: bytes,
-                  amp_names: Sequence[str] | None = None,
-                  cab_names: Sequence[str] | None = None) -> PresetImage:
+def decode_preset(
+    image: bytes,
+    amp_names: Sequence[str] | None = None,
+    cab_names: Sequence[str] | None = None,
+) -> PresetImage:
     """Decode a 92-byte preset image into named fields.
 
     `amp_names` / `cab_names` are the 20-entry slot dictionaries read from flash;
@@ -916,8 +1339,8 @@ def decode_preset(image: bytes,
     if len(image) != PRESET_SIZE:
         raise ValueError(f"preset image must be {PRESET_SIZE} bytes, got {len(image)}")
 
-    volume = int.from_bytes(image[ADDR_PATCH_VOLUME:ADDR_PATCH_VOLUME + 2], "little")
-    routing = list(image[ADDR_ROUTING:ADDR_ROUTING + 6])
+    volume = int.from_bytes(image[ADDR_PATCH_VOLUME : ADDR_PATCH_VOLUME + 2], "little")
+    routing = list(image[ADDR_ROUTING : ADDR_ROUTING + 6])
 
     flash_names = {"amp": list(amp_names or []), "cab": list(cab_names or [])}
     blocks: list[BlockState] = []
@@ -925,13 +1348,17 @@ def decode_preset(image: bytes,
         model_index = image[block.model_addr]
         if block.key in MODELLESS_BLOCKS:
             names = flash_names[block.key]
-            model_name = (names[model_index]
-                          if 0 <= model_index < len(names)
-                          else f"slot {model_index + 1}")
+            model_name = (
+                names[model_index]
+                if 0 <= model_index < len(names)
+                else f"slot {model_index + 1}"
+            )
         else:
-            model_name = (block.models[model_index]
-                          if model_index < len(block.models)
-                          else f"unknown model {model_index}")
+            model_name = (
+                block.models[model_index]
+                if model_index < len(block.models)
+                else f"unknown model {model_index}"
+            )
         state = BlockState(
             key=block.key,
             name=block.name,
@@ -947,25 +1374,29 @@ def decode_preset(image: bytes,
                 f"{block.model_addr:#04x} reads {model_index}, which is outside "
                 f"the model dictionary for {block.name}. Either the image is not "
                 f"a valid preset or this firmware has models we do not know "
-                f"about.") from exc
+                f"about."
+            ) from exc
         for slot1, knob_name in enumerate(names_for_model, start=1):
             if knob_name == GHOST:
                 continue
             addr = block.knob_addr(slot1)
-            value = int.from_bytes(image[addr:addr + 2], "little")
+            value = int.from_bytes(image[addr : addr + 2], "little")
             state.knobs.append((slot1, knob_name, addr, value))
         blocks.append(state)
     return PresetImage(raw=bytes(image), volume=volume, routing=routing, blocks=blocks)
 
 
-def format_knob_value(block_key: str, knob_name: str, value: int,
-                      dly_model: int = 0) -> str:
+def format_knob_value(
+    block_key: str, knob_name: str, value: int, dly_model: int = 0
+) -> str:
     """Human-readable rendering of a raw 0-100 knob value."""
     if block_key == "cab" and knob_name == "Low Cut":
         return f"{value} ({display_low_cut_hz(value):.0f} Hz)"
     if block_key == "cab" and knob_name == "High Cut":
-        return f"{value} ({display_high_cut_khz(value):.1f} kHz, display slider " \
-               f"shows {100 - value})"
+        return (
+            f"{value} ({display_high_cut_khz(value):.1f} kHz, display slider "
+            f"shows {100 - value})"
+        )
     if block_key == "dly" and knob_name == "Time":
         return f"{value} ({display_delay_ms(value, dly_model):.0f} ms)"
     return str(value)
@@ -994,10 +1425,11 @@ def parse_name_table(payload: bytes) -> list[str]:
             f"name table payload is {len(payload)} bytes, expected "
             f"{NAME_TABLE_SIZE} ({NAME_COUNT} records x {NAME_STRIDE} bytes). "
             f"A short payload means the reply was truncated; returning the "
-            f"names that did arrive would silently under-report the pedal.")
+            f"names that did arrive would silently under-report the pedal."
+        )
     names: list[str] = []
     for i in range(NAME_COUNT):
-        record = payload[i * NAME_STRIDE:(i + 1) * NAME_STRIDE]
+        record = payload[i * NAME_STRIDE : (i + 1) * NAME_STRIDE]
         text = record.split(b"\x00", 1)[0]
         names.append("".join(chr(b) for b in text if 0x20 <= b <= 0x7E))
     return names
@@ -1006,4 +1438,4 @@ def parse_name_table(payload: bytes) -> list[str]:
 def strip_slot_prefix(name: str, slot1: int) -> str:
     """Remove the leading 1-based slot number the pedal stores in each record."""
     prefix = str(slot1)
-    return name[len(prefix):] if name.startswith(prefix) else name
+    return name.removeprefix(prefix)

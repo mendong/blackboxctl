@@ -10,10 +10,16 @@ survive.
 
 | File | What it is |
 | :--- | :--- |
-| `midi_transport.py` | The CoreMIDI-over-ctypes transport used in the 2026-08-28 session. **This is the only module that has ever transmitted anything to this pedal.** Its `assert_read_only()` gate refuses any packet that is not one of the four read-only commands, and it was the gate in force for every frame in [`../logs/`](../logs/). |
+| `midi_transport.py` | The CoreMIDI-over-ctypes transport used in the 2026-08-28 read-only session. It was the only module that transmitted during that session. Its `assert_read_only()` gate refuses any packet that is not one of the four read-only commands, and it was the gate in force for every frame in [`../logs/`](../logs/). |
 | `validate.py` | The step-by-step driver that produced those logs (`codec`, `endpoints`, `ram`, `preset`, `cab`, `amp`, `flash`, `flash:N`, `all`). |
 | `amx.py` | The reference capture parser behind [`../capture-format-spec.md`](../capture-format-spec.md) — parses a `.am2`/`.am2Data`/`.am3Data` record, splits the payload into named regions, repairs a corrupt magic, rewrites the name field, and splits a factory `*_ampCab.bin`. It implements that document's §9 validation rules, which are deliberately stricter than the ones `tools/blackboxctl` enforces. |
 | `base128_ref.py` | An independently written Base-128 codec, derived from `cuvave-midi`'s own Rust test vectors rather than from the JavaScript editor the transport followed. It carries 56 executable assertions including every test vector in `protocol-algorithms.md` §2. It was used as the cross-check that agreed bit-for-bit with `midi_transport.py` on 299 random buffers and on all 13 captured SysEx messages. |
+
+[`midi_tap_lldb.py`](midi_tap_lldb.py) is the preserved LLDB capture helper
+used to observe M-EFCS CoreMIDI sends on a locally installed editor. It records
+arguments for later protocol analysis. It is not imported by blackboxctl, is
+not part of the supported runtime, and must only be attached to software the
+operator already has a licence to run.
 
 Two notes for anyone reading this code rather than the specification:
 
@@ -29,4 +35,5 @@ Two notes for anyone reading this code rather than the specification:
   definition is the payload sum from offset 6, which is identical to offset 5 on every frame
   in evidence. See `../protocol-spec.md` §2.3.
 
-**Do not run these against the pedal.** The current phase sends nothing to the device.
+**Do not run these preserved scripts against the pedal.** They are evidence, not the
+supported interface. Use `tools/blackboxctl/` and its current `STATUS.md` instead.

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
+from fixtures import device_frames as fx
 
 from blackboxctl import protocol
-from fixtures import device_frames as fx
 
 
 @pytest.mark.parametrize("name", sorted(fx.READ_COMMANDS))
@@ -44,17 +44,23 @@ def test_build_frame_output_always_parses_as_well_formed():
         assert frame.payload == b"" and frame.size == size
 
 
-def test_build_frame_refuses_the_undetermined_checksum_region():
-    """Above 247 payload bytes the two checksum formulas diverge.
-
-    Previously build_frame happily emitted a frame its own parse_frame
-    rejected. It must refuse instead of guessing.
-    """
-    protocol.build_frame(protocol.MAGIC_WRITE, protocol.SPACE_STRING,
-                         0x90000000, 247, bytes(247))
-    with pytest.raises(ValueError, match="247"):
-        protocol.build_frame(protocol.MAGIC_WRITE, protocol.SPACE_STRING,
-                             0x90000000, 280, bytes(280))
+def test_build_frame_accepts_captured_chunk_size_and_refuses_larger():
+    raw = protocol.build_frame(
+        protocol.MAGIC_WRITE,
+        protocol.SPACE_STRING,
+        0,
+        protocol.LIBRARY_CHUNK_SIZE,
+        bytes(protocol.LIBRARY_CHUNK_SIZE),
+    )
+    assert protocol.parse_frame(raw).well_formed
+    with pytest.raises(ValueError, match=r"1,015|1015"):
+        protocol.build_frame(
+            protocol.MAGIC_WRITE,
+            protocol.SPACE_STRING,
+            0,
+            protocol.LIBRARY_CHUNK_SIZE + 1,
+            bytes(protocol.LIBRARY_CHUNK_SIZE + 1),
+        )
 
 
 def test_a_truncated_reply_is_detectable():
@@ -67,8 +73,49 @@ def test_a_truncated_reply_is_detectable():
     assert not frame.well_formed
 
 
-def test_ack_frame_is_too_short_for_the_confirmed_field_model():
-    """Documented, never observed, and inconsistent with the field model."""
+def test_ack_uses_its_own_confirmed_compact_shape():
+    """Physical write ACKs are deliberately not parsed as memory reply frames."""
     assert len(protocol.ACK_FRAME) == 8
     with pytest.raises(ValueError, match="too short"):
         protocol.parse_frame(protocol.ACK_FRAME)
+
+
+@pytest.mark.parametrize("value", [True, False, 1.0, "1"])
+def test_slot_and_index_validators_refuse_non_integer_values(value):
+    for validator in (
+        protocol.check_preset_index,
+        protocol.check_capture_index,
+        protocol.check_slot_number,
+    ):
+        with pytest.raises(TypeError, match="integer"):
+            validator(value)
+
+
+def test_every_slot_addressing_builder_refuses_boolean_indexes():
+    flash = protocol.WriteConsent(
+        path_key="restore", confirmed_by_user=True, allow_flash=True
+    )
+    load = protocol.WriteConsent(path_key="load-preset", confirmed_by_user=True)
+    amp = protocol.WriteConsent(
+        path_key="save-amp", confirmed_by_user=True, allow_flash=True
+    )
+    cab = protocol.WriteConsent(
+        path_key="save-cab", confirmed_by_user=True, allow_flash=True
+    )
+    builders = (
+        lambda: protocol.cmd_read_flash_preset(True),
+        lambda: protocol.cmd_write_flash_preset(
+            True, bytes(protocol.PRESET_SIZE), consent=flash
+        ),
+        lambda: protocol.cmd_load_preset(True, consent=load),
+        lambda: protocol.cmd_save_amp(
+            True, bytes(protocol.AMP_RECORD_SIZE), consent=amp
+        ),
+        lambda: protocol.cmd_save_cab_header(
+            True, bytes(protocol.CAB_HEADER_SIZE), consent=cab
+        ),
+    )
+
+    for build in builders:
+        with pytest.raises(TypeError, match="integer"):
+            build()

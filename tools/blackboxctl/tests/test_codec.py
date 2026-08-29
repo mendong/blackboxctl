@@ -8,17 +8,16 @@ from __future__ import annotations
 import random
 
 import pytest
+from fixtures import device_frames as fx
 
 from blackboxctl import protocol
-from fixtures import device_frames as fx
 
 
 def test_roundtrip_fuzz():
     rng = random.Random(20260828)
     for length in range(1, 300):
         blob = bytes(rng.randrange(256) for _ in range(length))
-        assert protocol.base128_decode(
-            protocol.base128_encode(blob))[:length] == blob
+        assert protocol.base128_decode(protocol.base128_encode(blob))[:length] == blob
 
 
 def test_logged_340_byte_sysex_decodes_to_the_logged_295_byte_frame():
@@ -62,25 +61,14 @@ def test_checksum_rx_validates_every_real_reply(name):
 
 
 @pytest.mark.parametrize("name", sorted(fx.UNIQUE_REPLIES))
-def test_checksum_tx_fails_on_exactly_the_two_name_blocks(name):
-    """The empirical claim, stated so it stays reproducible.
-
-    Offset 5 validates 7/7 unique replies; offset 4 validates 5/7, failing on
-    the two 295-byte name blocks, which are the only replies with byte[4] != 0.
-    """
+def test_unified_checksum_validates_all_observed_replies(name):
+    """M-EFCS large writes proved both directions sum from offset five."""
     frame = fx.UNIQUE_REPLIES[name]
-    agrees = protocol.checksum_tx(frame) == frame[-1]
-    if name in fx.BYTE4_NONZERO:
-        assert frame[4] == 0x01
-        assert not agrees
-    else:
-        assert frame[4] == 0x00
-        assert agrees
+    assert protocol.checksum_tx(frame) == frame[-1]
+    assert protocol.checksum_rx(frame) == frame[-1]
 
 
-def test_offset_counts_are_seven_of_seven_and_five_of_seven():
-    ok5 = sum(1 for f in fx.UNIQUE_REPLIES.values()
-              if protocol.checksum_rx(f) == f[-1])
-    ok4 = sum(1 for f in fx.UNIQUE_REPLIES.values()
-              if protocol.checksum_tx(f) == f[-1])
-    assert (ok5, ok4, len(fx.UNIQUE_REPLIES)) == (7, 5, 7)
+def test_unified_checksum_counts_are_seven_of_seven():
+    ok5 = sum(1 for f in fx.UNIQUE_REPLIES.values() if protocol.checksum_rx(f) == f[-1])
+    ok4 = sum(1 for f in fx.UNIQUE_REPLIES.values() if protocol.checksum_tx(f) == f[-1])
+    assert (ok5, ok4, len(fx.UNIQUE_REPLIES)) == (7, 7, 7)

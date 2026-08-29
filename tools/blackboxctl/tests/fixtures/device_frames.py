@@ -2,7 +2,7 @@
 
 Transcribed from docs/reverse-engineering/device-validation.md, which is the
 transcript of the one hardware validation session (2026-08-28, serial
-4150353439333111). Every command in that session was read-only.
+whose serial is intentionally omitted). Every command in that session was read-only.
 
 These are the regression fixtures. The worked example in the upstream
 usb_sysex_protocol.md is NOT usable as one: its raw and encoded lines do not
@@ -23,25 +23,25 @@ def h(text: str) -> bytes:
 # --- The seven read commands transmitted, byte for byte -------------------
 
 READ_COMMANDS: dict[str, bytes] = {
-    "ram_dump":    h("00 59 23 08 00 00 04 00 00 00 10 5C 00 00 8F"),
+    "ram_dump": h("00 59 23 08 00 00 04 00 00 00 10 5C 00 00 8F"),
     "preset_sync": h("00 59 23 08 00 00 04 00 00 00 20 04 00 00 D7"),
-    "cab_names":   h("00 59 23 08 00 00 05 00 00 00 80 18 01 00 61"),
-    "amp_names":   h("00 59 23 08 00 00 05 00 00 00 90 18 01 00 51"),
-    "flash_00":    h("00 59 23 08 00 00 04 00 00 00 00 5C 00 00 9F"),
-    "flash_02":    h("00 59 23 08 00 00 04 B8 00 00 00 5C 00 00 E7"),
-    "flash_40":    h("00 59 23 08 00 00 04 60 0E 00 00 5C 00 00 31"),
+    "cab_names": h("00 59 23 08 00 00 05 00 00 00 80 18 01 00 61"),
+    "amp_names": h("00 59 23 08 00 00 05 00 00 00 90 18 01 00 51"),
+    "flash_00": h("00 59 23 08 00 00 04 00 00 00 00 5C 00 00 9F"),
+    "flash_02": h("00 59 23 08 00 00 04 B8 00 00 00 5C 00 00 E7"),
+    "flash_40": h("00 59 23 08 00 00 04 60 0E 00 00 5C 00 00 31"),
 }
 
 # --- Outbound SysEx as it went on the wire --------------------------------
 
 TX_SYSEX: dict[str, bytes] = {
-    "ram_dump":    h("F0 00 32 0D 41 00 00 00 02 00 00 00 00 41 0B 00 00 0F 01 F7"),
+    "ram_dump": h("F0 00 32 0D 41 00 00 00 02 00 00 00 00 41 0B 00 00 0F 01 F7"),
     "preset_sync": h("F0 00 32 0D 41 00 00 00 02 00 00 00 00 42 00 00 00 57 01 F7"),
-    "cab_names":   h("F0 00 32 0D 41 00 00 40 02 00 00 00 00 08 23 00 00 61 00 F7"),
-    "amp_names":   h("F0 00 32 0D 41 00 00 40 02 00 00 00 00 09 23 00 00 51 00 F7"),
-    "flash_00":    h("F0 00 32 0D 41 00 00 00 02 00 00 00 00 40 0B 00 00 1F 01 F7"),
-    "flash_02":    h("F0 00 32 0D 41 00 00 00 02 38 01 00 00 40 0B 00 00 67 01 F7"),
-    "flash_40":    h("F0 00 32 0D 41 00 00 00 02 60 1C 00 00 40 0B 00 00 31 00 F7"),
+    "cab_names": h("F0 00 32 0D 41 00 00 40 02 00 00 00 00 08 23 00 00 61 00 F7"),
+    "amp_names": h("F0 00 32 0D 41 00 00 40 02 00 00 00 00 09 23 00 00 51 00 F7"),
+    "flash_00": h("F0 00 32 0D 41 00 00 00 02 00 00 00 00 40 0B 00 00 1F 01 F7"),
+    "flash_02": h("F0 00 32 0D 41 00 00 00 02 38 01 00 00 40 0B 00 00 67 01 F7"),
+    "flash_40": h("F0 00 32 0D 41 00 00 00 02 60 1C 00 00 40 0B 00 00 31 00 F7"),
 }
 
 # --- The seven unique reply frames ----------------------------------------
@@ -146,17 +146,49 @@ F0 00 32 0D 01 12 00 40 02 00 00 00 00 08 23 00 00 31 1A 31 7A 25 28 51 29 54 3E
 # --- Expected decodes -----------------------------------------------------
 
 CAB_NAMES = [
-    "1ML_BEST_IR", "2JVM_1960_57", "3V30_MD421", "4G12-EVH_CT", "5HIFI_OK",
-    "6WANGS212_ECM", "7VOX_AC30", "8FRMAN112", "9MeOSick-III", "10SoldSC412",
-    "11FD_TW1980", "12MESA_412", "13HIW412SWF", "14Recto_112", "15JC120_BOX",
-    "16Agula410", "17AgSVT410", "18DgDG212N", "19MbSway210", "20Tace412",
+    "1ML_BEST_IR",
+    "2JVM_1960_57",
+    "3V30_MD421",
+    "4G12-EVH_CT",
+    "5HIFI_OK",
+    "6WANGS212_ECM",
+    "7VOX_AC30",
+    "8FRMAN112",
+    "9MeOSick-III",
+    "10SoldSC412",
+    "11FD_TW1980",
+    "12MESA_412",
+    "13HIW412SWF",
+    "14Recto_112",
+    "15JC120_BOX",
+    "16Agula410",
+    "17AgSVT410",
+    "18DgDG212N",
+    "19MbSway210",
+    "20Tace412",
 ]
 
 AMP_NAMES = [
-    "1J900_CL", "2FD_CL", "3JC120_CL", "4BLUE_OD", "5RAT_OD", "6M-VAVE_OD",
-    "7SUPA_OD", "8DARKS_DS", "9J900_DS", "10JHS_DS", "11EVH_5150", "12FRIMAN",
-    "13XC_DS", "14ROOM40", "15JVM", "16AgDb750_BS", "17ApSVT_BS",
-    "18PjBuddy_BS", "19DgXu_BS", "20MarkLm_BS",
+    "1J900_CL",
+    "2FD_CL",
+    "3JC120_CL",
+    "4BLUE_OD",
+    "5RAT_OD",
+    "6M-VAVE_OD",
+    "7SUPA_OD",
+    "8DARKS_DS",
+    "9J900_DS",
+    "10JHS_DS",
+    "11EVH_5150",
+    "12FRIMAN",
+    "13XC_DS",
+    "14ROOM40",
+    "15JVM",
+    "16AgDb750_BS",
+    "17ApSVT_BS",
+    "18PjBuddy_BS",
+    "19DgXu_BS",
+    "20MarkLm_BS",
 ]
 
 # The exact decode tables recorded in device-validation.md STEP 2 / 6a / 6c.
@@ -165,16 +197,32 @@ AMP_NAMES = [
 EXPECTED_P41 = {
     "volume": 85,
     "routing_names": ["AMP", "CAB", "MOD", "REV", "FX", "DLY"],
-    "enabled": {"fx": True, "amp": True, "mod": True, "dly": False,
-                "rev": True, "cab": True},
+    "enabled": {
+        "fx": True,
+        "amp": True,
+        "mod": True,
+        "dly": False,
+        "rev": True,
+        "cab": True,
+    },
     "models": {"fx": 2, "amp": 0, "mod": 0, "dly": 3, "rev": 0, "cab": 6},
     "model_names": {"amp": "1J900_CL", "cab": "7VOX_AC30"},
-    "amp_knobs": [("Gain", 45), ("Level", 70), ("Bass", 40), ("Mid", 62),
-                  ("Treble", 60)],
+    "amp_knobs": [
+        ("Gain", 45),
+        ("Level", 70),
+        ("Bass", 40),
+        ("Mid", 62),
+        ("Treble", 60),
+    ],
     "cab_knobs": [("Level", 75), ("Low Cut", 26), ("High Cut", 100)],
     "mod_knobs": [("Speed", 20), ("Depth", 22), ("Mix", 12)],
-    "rev_knobs": [("Decay", 25), ("Mix", 12), ("High Pass", 60),
-                  ("Low Pass", 55), ("Depth", 15)],
+    "rev_knobs": [
+        ("Decay", 25),
+        ("Mix", 12),
+        ("High Pass", 60),
+        ("Low Pass", 55),
+        ("Depth", 15),
+    ],
 }
 
 EXPECTED_P01 = {
@@ -182,8 +230,13 @@ EXPECTED_P01 = {
     "routing_names": ["AMP", "CAB", "MOD", "REV", "FX", "DLY"],
     "models": {"fx": 2, "amp": 1, "mod": 0, "dly": 3, "rev": 0, "cab": 10},
     "model_names": {"amp": "2FD_CL", "cab": "11FD_TW1980"},
-    "amp_knobs": [("Gain", 25), ("Level", 70), ("Bass", 45), ("Mid", 55),
-                  ("Treble", 47)],
+    "amp_knobs": [
+        ("Gain", 25),
+        ("Level", 70),
+        ("Bass", 45),
+        ("Mid", 55),
+        ("Treble", 47),
+    ],
     "cab_knobs": [("Level", 70), ("Low Cut", 24), ("High Cut", 100)],
 }
 
@@ -192,8 +245,13 @@ EXPECTED_RAM = {
     "routing_names": ["FX", "AMP", "CAB", "MOD", "REV", "DLY"],
     "models": {"fx": 2, "amp": 2, "mod": 0, "dly": 3, "rev": 1, "cab": 4},
     "model_names": {"amp": "3JC120_CL", "cab": "5HIFI_OK"},
-    "amp_knobs": [("Gain", 23), ("Level", 67), ("Bass", 43), ("Mid", 46),
-                  ("Treble", 62)],
+    "amp_knobs": [
+        ("Gain", 23),
+        ("Level", 67),
+        ("Bass", 43),
+        ("Mid", 46),
+        ("Treble", 62),
+    ],
     "cab_knobs": [("Level", 68), ("Low Cut", 22), ("High Cut", 100)],
 }
 
@@ -203,6 +261,6 @@ EXPECTED_RAM = {
 # the builders match the doc AND that every safety gate refuses them.
 
 DOC_WRITE_LITERALS = {
-    "toggle_fx_on":  h("00 59 22 09 00 00 04 08 00 00 10 01 00 00 01 E1"),
-    "commit":        h("00 59 22 08 00 00 04 00 00 00 F0 00 00 00 0B"),
+    "toggle_fx_on": h("00 59 22 09 00 00 04 08 00 00 10 01 00 00 01 E1"),
+    "commit": h("00 59 22 08 00 00 04 00 00 00 F0 00 00 00 0B"),
 }

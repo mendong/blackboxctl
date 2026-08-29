@@ -7,50 +7,44 @@ on the pedal or in its file library. It assumes you already know what the projec
 The one thing to read before anything else: **presets reference amp and IR slots by
 number**, so replacing a slot silently changes every preset that points at it.
 
-## 1. Current state
+## 1. Last verified state
 
-- **The pedal is connected**, and read commands work. Reconnected and re-verified
-  2026-08-28: `device sync`, `device names`, `device dump` and `device preset N` for
-  N = 1..80 all succeed.
+- **Last connection verification:** read commands worked on 2026-08-28, and the write
+  migration completed on 2026-08-29. `device sync`, `device names`, `device dump` and
+  `device preset N` for N = 1..80 all succeeded. Re-check endpoints before relying on the
+  pedal still being connected.
 - **All 80 presets have been read from flash.** The slot-exposure audit that used to be a
   precondition for the first slot write is done; the tables are in
   [presets/library.md](presets/library.md#slot-exposure-what-a-slot-write-actually-changes).
   P06–P40 are populated factory presets, not empty. P42–P80 are unused defaults, which also
   confirms the preset count is 80.
-- **Exactly one amp or IR slot has ever been written by this project.** On 2026-08-28,
-  through the M-EFCS GUI, IR slot 1 went from the factory `1AC-SeVin` to `1ML_BEST_IR`.
-  Confirmed twice: in the GUI `Position` dropdown, and later by reading the IR name table
-  out of flash. Five *preset* slots were also written, earlier and through the same GUI —
-  see the bullet below.
-- **Pending, designed but not written:** amp slots 2-20, IR slots 2-6 and 8-20, and the
-  capture-based versions of presets P01-P05. Amp slot 1 and IR slot 7 stay factory
-  because P41 points at them.
-- **Presets currently on the device:** P01-P03 hold the built-in-amp-model values written
-  on 2026-07-20 and P04-P05 those written on 2026-07-26. All five are now confirmed by
-  flash read. One mismatch against the written record: **P05 reads total volume 49, not the
-  85 the July note claims.** P06-P40 are populated factory presets; P42-P80 are unused
-  defaults. P41 is protected.
-- **On the Mac:** 24 captures and 83 IRs installed into the M-EFCS library, on top of the
-  15 captures and 210 IRs already there, and confirmed visible after an app restart.
-- **Nothing has ever been written to this pedal over the wire.** Every device command sent
-  by `blackboxctl` or its predecessor was read-only, and every write path in the tool is
-  hard-disabled.
+- **All 20 AMP and 20 CAB slots were migrated by `blackboxctl` on 2026-08-29.** The final
+  persistent names match [presets/device-library.json](presets/device-library.json).
+- **P01-P12 are the current core bank.** They were rendered from declarative specs, saved
+  with rollback copies, and all twelve 92-byte flash images matched a final independent
+  read. See [presets/core-bank.md](presets/core-bank.md).
+- **P41 is retired, not protected.** The owner explicitly released it on 2026-08-29. Its
+  old raw image remains below only as historical recovery data.
+- **On the Mac, verified 2026-08-29:** 24 captures and 83 IRs installed into the M-EFCS
+  library, on top of the 15 captures and 210 IRs already there, and confirmed visible after
+  an app restart.
+- **CLI writes are physically verified.** Reversible RAM edits, an inactive P80 save and
+  restore, all 40 AMP/CAB commits, and P01-P12 saves completed. Audible validation remains
+  separate from stored-state validation.
 
 The slot maps and the write log live in [presets/library.md](presets/library.md); the
 per-preset state lives in the song documents. Do not restate either here — link.
 
 ## 2. Hard rules
 
-1. **Never overwrite `P41`** unless the user explicitly asks. See section 5.
-2. **Keep amp slot 1 and IR slot 7 at their factory contents** while P41 is protected.
-   P41 references them by number, so replacing either changes P41's sound without
-   touching P41.
-3. **Record a slot's current contents before overwriting it.** For a preset that is one
-   read-only command: `python -m blackboxctl device preset N`.
-4. **Treat the M-EFCS sandbox container as read-only** unless the task is explicitly a
+1. **Record a slot's current contents before overwriting it.** For a preset that is one
+   read-only command: `blackboxctl device preset N`.
+2. **Keep rollback assets outside the editor sandbox.** Verify the full backup before a
+   write and retain the source manifest and journal.
+3. **Treat the M-EFCS sandbox container as read-only** unless the task is explicitly a
    library install. It belongs to another application.
-5. **Prefer reversible changes.** Keep enough information to restore what was there.
-6. **Verify connection labels, installed-app state, slot contents, and parameter values
+4. **Prefer reversible changes.** Keep enough information to restore what was there.
+5. **Verify connection labels, installed-app state, slot contents, and parameter values
    before acting on them.** They are time-sensitive and this file may be stale.
 
 ## 3. Tone source policy
@@ -61,11 +55,10 @@ built-in amp models and not from the factory presets. The factory presets are ab
 - Slot maps, install procedure, pairing rules, and sources:
   [presets/library.md](presets/library.md).
 - Default IR when in doubt: `01A_ML Sound Lab's BEST IR IN THE WORLD`, IR slot 1.
-- Built-in amp models may still be referenced, but only for the reserved slots that P41
-  depends on.
+- Built-in amp models remain documentation history; no slot is reserved for P41.
 - Earlier built-in-model preset values are kept in each song document under a heading that
-  says so. They are history and, in some cases, a record of what is currently stored —
-  never a target.
+  says so. They record what was stored before the 2026-08-29 migration; they are history,
+  never a current target.
 - The four July 2026 documents under [docs/superpowers/](docs/superpowers/) planned the
   abandoned built-in-model presets. They are marked superseded and **must not be
   executed**, despite reading as live agentic plans with unchecked checkboxes.
@@ -74,24 +67,24 @@ built-in amp models and not from the factory presets. The factory presets are ab
 
 | | |
 | --- | --- |
-| Pedal | M-VAVE BlackBox, USB-C to the Mac. Connected; read commands verified 2026-08-28. |
+| Pedal | M-VAVE BlackBox, USB-C to the Mac. Last read verification: 2026-08-28; migration: 2026-08-29. |
 | M-EFCS connection label | `BLACKBOX v20` — the editor's product label, not a confirmed firmware version |
 | Editor | `/Applications/M-EFCS.app`, bundle id `com.digAmp.dgAmp`, Mac App Store build, version `3.5.2615` (`CFBundleVersion` `3052615`) |
 | macOS audio-device label | `USB-Audio` |
 | CoreMIDI identity | manufacturer `Jieli Technology`, product `USB Composite Device` |
-| Capacity | 20 amp slots, 20 IR/CAB slots, both replaceable; **80 preset slots**, confirmed by read (index 79 answers, 80 refused). `P01`-`P41` used here; `P42`-`P80` are unused defaults |
+| Capacity | 20 amp slots, 20 IR/CAB slots, both replaceable; **80 preset slots**, confirmed by read (index 79 answers, 80 refused). `P01`-`P12` are the documented core bank |
 | File library | `~/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS/` — `ampFile` for captures, `cabFile` for IRs |
 
-Factory amp models can be restored from the PC version of M-EFCS. Firmware updates run
-only from a Windows PC via M-UPGRADE.
+Factory content can be restored through M-EFCS. Firmware updates and firmware recovery
+belong to M-UPGRADE, not `blackboxctl`; see [docs/blackboxctl-recovery.md](docs/blackboxctl-recovery.md).
 
 Device slot names live in a fixed 14-byte flash record: **13 usable characters including
 the numeric prefix** for slots 1-9, 12 for slots 10-20.
 
-## 5. The protected preset: P41 `Wonderwall Live`
+## 5. Retired preset history: P41 `Wonderwall Live`
 
-Do not modify it. Its full 92-byte flash image was read on 2026-08-28, so unlike before,
-there is now enough here to restore it if it is ever damaged.
+P41 is no longer protected. Its full 92-byte flash image was read on 2026-08-28 and is
+retained here only as a historical recovery image.
 
 ```
 55 00 01 05 02 04 00 03 01 01 01 00 01 01 02 00 00 03 00 06 0F 00 23 00 37 00 37
@@ -113,8 +106,10 @@ Decoded:
 - DLY: `Dual`, **off**; Time 41, Fb 30, Mix 29, T-Mode 7, Speed 50, Depth 50
 - REV: `Room`, on; Decay 25, Mix 12, HPass 60, LPass 55, Depth 15
 
-Recover it at any time with `python -m blackboxctl device preset 41`, or decode the hex
-above offline with `python -m blackboxctl decode --hex "…"`. Source and raw bytes:
+Inspect its current replacement with `blackboxctl device preset 41`, or decode the old
+hex above offline with `blackboxctl decode --hex "…"`. Restoring the old bytes would
+require writing that 92-byte image with `device save`, after switching away from P41.
+Source and raw bytes:
 [device-validation.md](docs/reverse-engineering/device-validation.md) STEP 6c.
 
 M-EFCS may not support separately renaming every internal preset. When a name cannot be
@@ -122,47 +117,52 @@ stored on the device, document the slot-to-name mapping in this repository.
 
 ## 6. Preset safety rules
 
-1. Never overwrite `P41` unless the user explicitly requests it.
-2. Presets reference amp and IR slots **by number**. Replacing a slot changes every preset
+1. Presets reference amp and IR slots **by number**. Replacing a slot changes every preset
    pointing at it. The full exposure map for all 80 presets is in
    [presets/library.md](presets/library.md#slot-exposure-what-a-slot-write-actually-changes)
-   — consult it before any slot write. `P41` uses **amp slot 1** and **IR slot 7**; keep
-   those at factory while `P41` is protected, which also protects P02, P13 and P14, who
-   share IR slot 7. Only **amp slots 7 and 20 and IR slots 14, 19 and 20** are referenced by
-   nothing and can be replaced with no side effect.
-3. Build and audition new sounds in the user-selected slot only after inspecting and
+   — consult it before any slot write. The 2026-08-29 migration intentionally replaced all
+   40 shared slots after backing up all 80 preset images.
+2. Build and audition new sounds in the user-selected slot only after inspecting and
    recording its current contents.
-4. Before writing a preset, read and record the current slot, effect chain, parameter
+3. Before writing a preset, read and record the current slot, effect chain, parameter
    values, and device connection state. `python -m blackboxctl device preset N` does this
    without loading the preset.
-5. Prefer reversible changes. Keep enough information to restore the previous preset.
-6. After writing, verify both the saved parameter values in M-EFCS and the audible result
-   through the connected guitar.
+4. Prefer reversible changes. Keep enough information to restore the previous preset.
+5. After a preset write, verify the full 92-byte flash image through `blackboxctl`; after an
+   AMP/CAB write, verify its persistent slot name and retain the source hash. Then verify
+   the audible result through the connected guitar. M-EFCS is an optional visual cross-check,
+   not the stored-state authority.
 
-## 7. blackboxctl: reading the device from a terminal
+## 7. blackboxctl: controlling the device from a terminal
 
 The GUI is no longer the only way to inspect the device. There is a CLI at
-[tools/blackboxctl](tools/blackboxctl/) — no dependencies, Python 3.10+, GPL-3.0,
-`python -m blackboxctl`. Read
+[tools/blackboxctl](tools/blackboxctl/) — no third-party Python package dependencies,
+Python 3.10+, GPL-3.0, `python -m blackboxctl`. Device commands use macOS CoreMIDI, and
+preparing a new AMP record needs the installed M-EFCS `libamx_parser.dylib`. Read
 [tools/blackboxctl/STATUS.md](tools/blackboxctl/STATUS.md) before trusting any claim about
 it; it separates what was verified on hardware from what was not.
 
 It talks to the pedal over USB MIDI SysEx, so it does not need the GUI, does not need
 screen coordinates, and cannot be derailed by another app taking focus.
 
-**Device commands are read-only and cannot be made otherwise.** No write path is enabled;
-`python -m blackboxctl write-paths` shows each state-changing command and the exact
-evidence for why it is disabled.
+Device mutations are dry runs by default and require `--yes`. Reads are allowlisted;
+writes require operation-specific consent, flash requires a second capability, and no
+generic arbitrary-address or firmware writer is exposed. See the CLI README for exact
+rollback and verification behavior.
 
 | Command | What it does |
 | --- | --- |
-| `selftest` | offline protocol check; touches nothing. Run it first. |
+| `selftest` / `doctor` | offline protocol check, then host/MIDI/M-EFCS readiness. Run `doctor` first. |
 | `device endpoints` / `sync` / `dump` / `names` / `preset N` | read endpoints, the active preset id, the live preset, the 40 slot names, or stored `PNN` — decoded, without loading it |
 | `inspect FILES` | validate `.am2` / `.am3Data` captures and `.wav` IRs |
 | `rename FILE NAME` | edit a capture's 13-char header name; `--repair-magic` fixes an `am2converter` magic |
 | `decode --hex …` | decode a 92-byte preset image offline |
 | `library list` / `diff` / `install` / `restart-editor` | list files, compare `presets/library.md` to disk, copy files in, restart the GUI so it rescans |
-| `write-paths` | every state-changing command and why it is disabled |
+| `backup verify` / `extract` / `extract-all` | checksum a JSON backup or write P01.bin..P80.bin |
+| `device backup` / `load` / `audition` / `save` | preserve, audition, and save presets with read-back and rollback |
+| `device amp …` / `device cab …` | prepare, stage, and save capture or IR slots |
+| `device library-apply MANIFEST` | preflight and resume a verified 40-slot migration |
+| `write-paths` | state-changing commands and their safeguards |
 
 Caveats worth knowing before you run it:
 
@@ -172,8 +172,8 @@ Caveats worth knowing before you run it:
   GUI work. Do not run it while someone is using the app.
 - The default `--library-root` is the M-EFCS sandbox container, so `library list` and
   `library diff` reach outside the repository by default.
-- `library diff` locates `presets/library.md` by walking up from its own file, so it works
-  in place and under `pip install -e .`, but not under a plain `pip install .`.
+- `library diff` finds `presets/library.md` from this checkout, or by walking up
+  from the current working directory. Pass `--doc PATH` if neither layout exists.
 - The `device` commands are macOS-only and need the pedal plugged in. Everything else
   works offline.
 
@@ -195,11 +195,16 @@ steps 1 and 2.
 somewhere that is not a temp directory. Full folder inventory, install detail and the
 current backup's location: [presets/library.md](presets/library.md).
 
-## 9. Driving M-EFCS from a session
+## 9. M-EFCS manual fallback
 
-Still needed for anything the CLI cannot do: **writing slots, writing presets, and
-auditioning**. Those are GUI-only. M-EFCS is a Flutter app, so its accessibility tree
-exposes only the window, not its controls — there is no way to click a named button.
+**Last-resort GUI notes, not the supported write path.** Use `blackboxctl`
+whenever it can perform the operation. Coordinate clicks are historical
+recovery knowledge from before the CLI could save AMP/CAB/preset slots.
+
+`blackboxctl` now writes and auditions AMP, CAB, and preset content without the GUI.
+M-EFCS remains useful for factory restore, visual comparison, and operations the CLI has
+not implemented. It is a Flutter app, so its accessibility tree exposes only the window,
+not its controls — there is no way to click a named button.
 
 What works:
 
@@ -207,8 +212,8 @@ What works:
   gives the window frame in points.
 - `cliclick` (`/opt/homebrew/bin/cliclick`) moves and clicks at screen coordinates, and
   types text.
-- `screencapture -x -o out.png` then reading the image is the only way to confirm what
-  happened. Verify after every step.
+- `screencapture -x -o out.png` then reading the image confirms visible GUI state. It does
+  not replace CLI flash read-back or an audible check.
 
 Rules learned the hard way:
 

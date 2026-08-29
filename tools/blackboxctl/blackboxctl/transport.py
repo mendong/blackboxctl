@@ -13,18 +13,12 @@ reached.
 
 Safety
 ------
-:meth:`BlackBox.send` refuses to transmit anything that is not one of the
-confirmed read-only commands unless the caller passes an explicit
-:class:`protocol.WriteConsent`. Even with consent, ``send`` independently
-re-checks the frame on the wire: it refuses any ``00 59 22`` frame whose target
-address falls in the flash preset array or whose length low byte is ``0x64``
-(a 92-byte payload, i.e. a full preset image) unless ``allow_flash`` is set, and
-it refuses any write path whose ``hardware_confirmed`` is False.
-
-Every entry in ``protocol.WRITE_PATHS`` currently has
-``hardware_confirmed=False``, so **no write frame can reach the wire at all**,
-from the CLI or from a REPL. That is enforced here, not in the CLI, so a future
-script cannot bypass it by not being the CLI.
+:meth:`BlackBox.send` refuses to transmit anything that is not an allowlisted
+read unless the caller passes an explicit :class:`protocol.WriteConsent`. Even
+with consent, ``send`` independently re-checks the final frame's exact space,
+address, payload shape, checksum, and bounds against the named write path.
+Flash paths additionally require ``allow_flash`` and unconfirmed paths remain
+blocked except for one frame-bound physical probe capability.
 
 Verification status
 -------------------
@@ -41,10 +35,16 @@ Attribution: see ../NOTICE. GPL-3.0.
 from __future__ import annotations
 
 import ctypes
+import errno
+import fcntl
+import os
+import platform
 import threading
 import time
+from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
-from typing import Callable
+from pathlib import Path
 
 from . import protocol
 from .protocol import Frame, UnsafePacket, assert_read_only, hexs
@@ -63,6 +63,19 @@ Endpoint integer refs are NOT stable across replug, so endpoints are always
 resolved by this string, never by a hardcoded id.
 """
 
+DEVICE_LOCK_PATH = (
+    Path.home() / ".local" / "share" / "blackboxctl" / "locks" / "device.lock"
+)
+"""Per-user advisory lock held for the full lifetime of an open pedal link."""
+
+MIDI_PACKET_ALIGN_4 = platform.machine().lower() in ("arm64", "aarch64")
+
+
+def _next_packet_offset(offset: int, length: int, *, align4: bool) -> int:
+    """Mirror CoreMIDI's architecture-dependent ``MIDIPacketNext`` macro."""
+    result = offset + 10 + length
+    return (result + 3) & ~3 if align4 else result
+
 
 class TransportUnavailable(RuntimeError):
     """CoreMIDI could not be loaded, or no BlackBox endpoint was found."""
@@ -70,6 +83,18 @@ class TransportUnavailable(RuntimeError):
 
 class CorruptReply(RuntimeError):
     """A reply arrived but failed checksum / length / size validation."""
+
+
+class AckTimeout(RuntimeError):
+    """A write may have landed, but its exact acknowledgement was not observed."""
+
+
+class ReplyTimeout(RuntimeError):
+    """An open device did not return the requested read reply in time."""
+
+
+class SendInFlight(RuntimeError):
+    """CoreMIDI did not confirm that an asynchronous SysEx stopped sending."""
 
 
 # ---------------------------------------------------------------------------
@@ -96,37 +121,60 @@ def _load_frameworks() -> _Frameworks:
         return _FRAMEWORKS
     try:
         midi = ctypes.cdll.LoadLibrary(
-            "/System/Library/Frameworks/CoreMIDI.framework/CoreMIDI")
+            "/System/Library/Frameworks/CoreMIDI.framework/CoreMIDI"
+        )
         cf = ctypes.cdll.LoadLibrary(
-            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
-    except OSError as exc:                        # pragma: no cover - macOS only
+            "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+        )
+    except OSError as exc:  # pragma: no cover - macOS only
         raise TransportUnavailable(
             "CoreMIDI is unavailable on this system. blackboxctl's device "
             "commands require macOS with CoreMIDI; every other command works "
-            f"without it. Underlying error: {exc}") from exc
+            f"without it. Underlying error: {exc}"
+        ) from exc
 
     cf.CFStringCreateWithCString.restype = ctypes.c_void_p
-    cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
-                                             ctypes.c_uint32]
+    cf.CFStringCreateWithCString.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_char_p,
+        ctypes.c_uint32,
+    ]
     cf.CFStringGetCString.restype = ctypes.c_bool
-    cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
-                                      ctypes.c_long, ctypes.c_uint32]
+    cf.CFStringGetCString.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_char_p,
+        ctypes.c_long,
+        ctypes.c_uint32,
+    ]
     cf.CFRelease.argtypes = [ctypes.c_void_p]
 
     midi.MIDIClientCreate.restype = ctypes.c_int32
-    midi.MIDIClientCreate.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
-                                      ctypes.c_void_p,
-                                      ctypes.POINTER(_MIDIObjectRef)]
+    midi.MIDIClientCreate.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(_MIDIObjectRef),
+    ]
     midi.MIDIOutputPortCreate.restype = ctypes.c_int32
-    midi.MIDIOutputPortCreate.argtypes = [_MIDIObjectRef, ctypes.c_void_p,
-                                          ctypes.POINTER(_MIDIObjectRef)]
+    midi.MIDIOutputPortCreate.argtypes = [
+        _MIDIObjectRef,
+        ctypes.c_void_p,
+        ctypes.POINTER(_MIDIObjectRef),
+    ]
     midi.MIDIInputPortCreate.restype = ctypes.c_int32
-    midi.MIDIInputPortCreate.argtypes = [_MIDIObjectRef, ctypes.c_void_p,
-                                         _MIDIReadProc, ctypes.c_void_p,
-                                         ctypes.POINTER(_MIDIObjectRef)]
+    midi.MIDIInputPortCreate.argtypes = [
+        _MIDIObjectRef,
+        ctypes.c_void_p,
+        _MIDIReadProc,
+        ctypes.c_void_p,
+        ctypes.POINTER(_MIDIObjectRef),
+    ]
     midi.MIDIPortConnectSource.restype = ctypes.c_int32
-    midi.MIDIPortConnectSource.argtypes = [_MIDIObjectRef, _MIDIObjectRef,
-                                           ctypes.c_void_p]
+    midi.MIDIPortConnectSource.argtypes = [
+        _MIDIObjectRef,
+        _MIDIObjectRef,
+        ctypes.c_void_p,
+    ]
     midi.MIDIGetNumberOfSources.restype = ctypes.c_ulong
     midi.MIDIGetNumberOfDestinations.restype = ctypes.c_ulong
     midi.MIDIGetSource.restype = _MIDIObjectRef
@@ -134,8 +182,11 @@ def _load_frameworks() -> _Frameworks:
     midi.MIDIGetDestination.restype = _MIDIObjectRef
     midi.MIDIGetDestination.argtypes = [ctypes.c_ulong]
     midi.MIDIObjectGetStringProperty.restype = ctypes.c_int32
-    midi.MIDIObjectGetStringProperty.argtypes = [_MIDIObjectRef, ctypes.c_void_p,
-                                                 ctypes.POINTER(ctypes.c_void_p)]
+    midi.MIDIObjectGetStringProperty.argtypes = [
+        _MIDIObjectRef,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
     midi.MIDISendSysex.restype = ctypes.c_int32
     midi.MIDISendSysex.argtypes = [ctypes.POINTER(_MIDISysexSendRequest)]
     midi.MIDIClientDispose.argtypes = [_MIDIObjectRef]
@@ -145,8 +196,9 @@ def _load_frameworks() -> _Frameworks:
     return _FRAMEWORKS
 
 
-_MIDIReadProc = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p,
-                                 ctypes.c_void_p)
+_MIDIReadProc = ctypes.CFUNCTYPE(
+    None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p
+)
 
 
 class _MIDISysexSendRequest(ctypes.Structure):
@@ -163,7 +215,8 @@ class _MIDISysexSendRequest(ctypes.Structure):
 
 def _cfstr(fw: _Frameworks, text: str) -> ctypes.c_void_p:
     return ctypes.c_void_p(
-        fw.cf.CFStringCreateWithCString(None, text.encode(), _CF_ENCODING_UTF8))
+        fw.cf.CFStringCreateWithCString(None, text.encode(), _CF_ENCODING_UTF8)
+    )
 
 
 def _string_property(fw: _Frameworks, obj: int, key: str) -> str | None:
@@ -190,8 +243,10 @@ class Endpoint:
     manufacturer: str | None
 
     def describe(self) -> str:
-        return (f"index={self.index} ref={self.ref} name={self.name!r} "
-                f"display={self.display!r} manufacturer={self.manufacturer!r}")
+        return (
+            f"index={self.index} ref={self.ref} name={self.name!r} "
+            f"display={self.display!r} manufacturer={self.manufacturer!r}"
+        )
 
 
 def list_endpoints() -> tuple[list[Endpoint], list[Endpoint]]:
@@ -201,16 +256,26 @@ def list_endpoints() -> tuple[list[Endpoint], list[Endpoint]]:
     destinations: list[Endpoint] = []
     for index in range(fw.midi.MIDIGetNumberOfSources()):
         ref = fw.midi.MIDIGetSource(index)
-        sources.append(Endpoint(index, ref,
-                                _string_property(fw, ref, "name"),
-                                _string_property(fw, ref, "displayName"),
-                                _string_property(fw, ref, "manufacturer")))
+        sources.append(
+            Endpoint(
+                index,
+                ref,
+                _string_property(fw, ref, "name"),
+                _string_property(fw, ref, "displayName"),
+                _string_property(fw, ref, "manufacturer"),
+            )
+        )
     for index in range(fw.midi.MIDIGetNumberOfDestinations()):
         ref = fw.midi.MIDIGetDestination(index)
-        destinations.append(Endpoint(index, ref,
-                                     _string_property(fw, ref, "name"),
-                                     _string_property(fw, ref, "displayName"),
-                                     _string_property(fw, ref, "manufacturer")))
+        destinations.append(
+            Endpoint(
+                index,
+                ref,
+                _string_property(fw, ref, "name"),
+                _string_property(fw, ref, "displayName"),
+                _string_property(fw, ref, "manufacturer"),
+            )
+        )
     return sources, destinations
 
 
@@ -222,11 +287,16 @@ def list_endpoints() -> tuple[list[Endpoint], list[Endpoint]]:
 class BlackBox:
     """Open USB MIDI SysEx link to the pedal. Read-only unless explicitly told."""
 
-    def __init__(self, manufacturer: str = MANUFACTURER,
-                 on_log: Callable[[str], None] | None = None) -> None:
+    def __init__(
+        self,
+        manufacturer: str = MANUFACTURER,
+        on_log: Callable[[str], None] | None = None,
+    ) -> None:
         self.manufacturer = manufacturer
         self._log_sink = on_log
         self.log_lines: list[str] = []
+        self._device_lock_path = Path(DEVICE_LOCK_PATH).expanduser()
+        self._device_lock_fd: int | None = None
         self._fw = _load_frameworks()
         self._client = _MIDIObjectRef()
         self._out_port = _MIDIObjectRef()
@@ -239,6 +309,7 @@ class BlackBox:
         self._decoded: list[bytes] = []
         self._read_proc: object = None
         self._keepalive: list[object] = []
+        self._send_blocked = False
 
     # -- logging ----------------------------------------------------------
 
@@ -249,7 +320,85 @@ class BlackBox:
 
     # -- lifecycle --------------------------------------------------------
 
-    def open(self) -> "BlackBox":
+    def _acquire_device_lock(self) -> None:
+        """Fail fast unless this process exclusively owns the pedal session."""
+        if self._device_lock_fd is not None:
+            return
+
+        path = self._device_lock_path
+        descriptor: int | None = None
+        try:
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(path.parent, 0o700)
+            flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC
+            flags |= getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(path, flags, 0o600)
+            os.fchmod(descriptor, 0o600)
+        except BaseException as exc:
+            if descriptor is not None:
+                with suppress(OSError):
+                    os.close(descriptor)
+            if isinstance(exc, OSError):
+                raise TransportUnavailable(
+                    f"Cannot create the private BlackBox device lock at {path}: {exc}"
+                ) from exc
+            raise
+
+        assert descriptor is not None
+
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BaseException as exc:
+            if not (
+                isinstance(exc, OSError) and exc.errno in (errno.EACCES, errno.EAGAIN)
+            ):
+                os.close(descriptor)
+                if isinstance(exc, OSError):
+                    raise TransportUnavailable(
+                        f"Cannot lock BlackBox device session {path}: {exc}"
+                    ) from exc
+                raise
+            try:
+                owner = os.pread(descriptor, 256, 0).decode("utf-8", "replace").strip()
+            except OSError:
+                owner = ""
+            os.close(descriptor)
+            detail = f" Current owner: {owner}." if owner else ""
+            raise TransportUnavailable(
+                "Another blackboxctl process already has the BlackBox open. "
+                "Wait for that command to finish before running any read or "
+                f"write operation.{detail} Lock: {path}"
+            ) from exc
+
+        try:
+            owner = f"pid={os.getpid()}\n".encode()
+            os.ftruncate(descriptor, 0)
+            os.pwrite(descriptor, owner, 0)
+            os.fsync(descriptor)
+        except BaseException as exc:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+            if isinstance(exc, OSError):
+                raise TransportUnavailable(
+                    f"Cannot record ownership in BlackBox device lock {path}: {exc}"
+                ) from exc
+            raise
+        self._device_lock_fd = descriptor
+
+    def _release_device_lock(self) -> None:
+        descriptor = self._device_lock_fd
+        self._device_lock_fd = None
+        if descriptor is None:
+            return
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            # Closing also releases flock if the explicit unlock failed.
+            os.close(descriptor)
+
+    def open(self) -> BlackBox:
         """Acquire the CoreMIDI client and ports. Idempotent.
 
         Re-opening an already-open instance MUST be a no-op. ``open_device()``
@@ -266,52 +415,124 @@ class BlackBox:
         if self._client:
             return self
 
-        sources, destinations = list_endpoints()
-        src = [e for e in sources if (e.manufacturer or "") == self.manufacturer]
-        dst = [e for e in destinations
-               if (e.manufacturer or "") == self.manufacturer]
-        if not src or not dst:
-            raise TransportUnavailable(
-                f"No MIDI endpoint with manufacturer {self.manufacturer!r} was "
-                f"found. Is the BlackBox connected over USB?\n"
-                f"  sources:      {[e.describe() for e in sources] or 'none'}\n"
-                f"  destinations: {[e.describe() for e in destinations] or 'none'}")
-        self.source, self.destination = src[0], dst[0]
-        self.log(f"[midi] destination {self.destination.describe()}")
-        self.log(f"[midi] source      {self.source.describe()}")
+        self._acquire_device_lock()
+        try:
+            sources, destinations = list_endpoints()
+            src = [e for e in sources if (e.manufacturer or "") == self.manufacturer]
+            dst = [
+                e for e in destinations if (e.manufacturer or "") == self.manufacturer
+            ]
+            if not src or not dst:
+                raise TransportUnavailable(
+                    f"No complete MIDI endpoint pair with manufacturer "
+                    f"{self.manufacturer!r} was found. Is the BlackBox connected "
+                    f"over USB?\n  sources:      "
+                    f"{[e.describe() for e in sources] or 'none'}\n"
+                    f"  destinations: "
+                    f"{[e.describe() for e in destinations] or 'none'}"
+                )
+            if len(src) != 1 or len(dst) != 1:
+                raise TransportUnavailable(
+                    f"Ambiguous BlackBox endpoint set: found {len(src)} source(s) "
+                    f"and {len(dst)} destination(s) from {self.manufacturer!r}. "
+                    "Refusing to guess a cross-device pairing. Disconnect extra "
+                    "devices, then run 'blackboxctl device endpoints' to inspect "
+                    f"them.\n  matching sources:      "
+                    f"{[e.describe() for e in src]}\n"
+                    f"  matching destinations: {[e.describe() for e in dst]}"
+                )
+            self.source, self.destination = src[0], dst[0]
+            self.log(f"[midi] destination {self.destination.describe()}")
+            self.log(f"[midi] source      {self.source.describe()}")
 
-        fw = self._fw
-        name = _cfstr(fw, "blackboxctl")
-        if fw.midi.MIDIClientCreate(name, None, None,
-                                    ctypes.byref(self._client)) != 0:
-            raise TransportUnavailable("MIDIClientCreate failed")
-        if fw.midi.MIDIOutputPortCreate(self._client, _cfstr(fw, "out"),
-                                        ctypes.byref(self._out_port)) != 0:
-            raise TransportUnavailable("MIDIOutputPortCreate failed")
-        self._read_proc = _MIDIReadProc(self._on_packets)   # must stay referenced
-        if fw.midi.MIDIInputPortCreate(self._client, _cfstr(fw, "in"),
-                                       self._read_proc, None,
-                                       ctypes.byref(self._in_port)) != 0:
-            raise TransportUnavailable("MIDIInputPortCreate failed")
-        if fw.midi.MIDIPortConnectSource(self._in_port,
-                                         _MIDIObjectRef(self.source.ref),
-                                         None) != 0:
-            raise TransportUnavailable("MIDIPortConnectSource failed")
-        fw.cf.CFRelease(name)
+            fw = self._fw
+            client_name = _cfstr(fw, "blackboxctl")
+            try:
+                status = fw.midi.MIDIClientCreate(
+                    client_name, None, None, ctypes.byref(self._client)
+                )
+            finally:
+                fw.cf.CFRelease(client_name)
+            if status != 0:
+                raise TransportUnavailable("MIDIClientCreate failed")
+
+            output_name = _cfstr(fw, "out")
+            try:
+                status = fw.midi.MIDIOutputPortCreate(
+                    self._client, output_name, ctypes.byref(self._out_port)
+                )
+            finally:
+                fw.cf.CFRelease(output_name)
+            if status != 0:
+                raise TransportUnavailable("MIDIOutputPortCreate failed")
+
+            self._read_proc = _MIDIReadProc(self._on_packets)  # must stay referenced
+            input_name = _cfstr(fw, "in")
+            try:
+                status = fw.midi.MIDIInputPortCreate(
+                    self._client,
+                    input_name,
+                    self._read_proc,
+                    None,
+                    ctypes.byref(self._in_port),
+                )
+            finally:
+                fw.cf.CFRelease(input_name)
+            if status != 0:
+                raise TransportUnavailable("MIDIInputPortCreate failed")
+
+            if (
+                fw.midi.MIDIPortConnectSource(
+                    self._in_port, _MIDIObjectRef(self.source.ref), None
+                )
+                != 0
+            ):
+                raise TransportUnavailable("MIDIPortConnectSource failed")
+        except BaseException:
+            # A failed CoreMIDI create call may still leave its output handle
+            # non-zero. Dispose every acquired object and clear the guard so a
+            # later open() performs a real retry instead of treating this
+            # partially initialised instance as connected.
+            try:
+                self.close()
+            except BaseException as cleanup_error:  # noqa: BLE001
+                # Preserve the acquisition failure while retaining evidence of
+                # an unexpected cleanup failure. close() resets handles before
+                # it calls CoreMIDI, so retry remains possible either way.
+                self.log(f"[midi cleanup error] {cleanup_error!r}")
+            raise
         return self
 
     def close(self) -> None:
         fw = self._fw
-        for port in (self._in_port, self._out_port):
-            if port:
-                fw.midi.MIDIPortDispose(port)
-        if self._client:
-            fw.midi.MIDIClientDispose(self._client)
+        in_port, out_port, client = (self._in_port, self._out_port, self._client)
+        # Reset first. Even if a native disposer unexpectedly raises, open()
+        # must not mistake a partial or closed connection for a live one.
         self._client = _MIDIObjectRef()
         self._in_port = _MIDIObjectRef()
         self._out_port = _MIDIObjectRef()
+        self.source = None
+        self.destination = None
+        errors: list[BaseException] = []
+        for port in (in_port, out_port):
+            if port:
+                try:
+                    fw.midi.MIDIPortDispose(port)
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append(exc)
+        if client:
+            try:
+                fw.midi.MIDIClientDispose(client)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+        try:
+            self._release_device_lock()
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+        if errors:
+            raise errors[0]
 
-    def __enter__(self) -> "BlackBox":
+    def __enter__(self) -> BlackBox:  # noqa: PYI034 - supports Python 3.10
         return self.open()
 
     def __exit__(self, *exc_info: object) -> None:
@@ -331,16 +552,18 @@ class BlackBox:
             for _ in range(count):
                 length = ctypes.cast(
                     ctypes.addressof(base.contents) + offset + 8,
-                    ctypes.POINTER(ctypes.c_uint16))[0]
-                chunks.append(bytes(bytearray(
-                    base[offset + 10:offset + 10 + length])))
-                # MIDIPacketNext on arm64 rounds up to a 4-byte boundary.
-                offset = (offset + 10 + length + 3) & ~3
+                    ctypes.POINTER(ctypes.c_uint16),
+                )[0]
+                chunks.append(
+                    bytes(bytearray(base[offset + 10 : offset + 10 + length]))
+                )
+                # MIDIPacketNext aligns only on ARM; Intel packets are packed.
+                offset = _next_packet_offset(offset, length, align4=MIDI_PACKET_ALIGN_4)
             with self._lock:
                 for chunk in chunks:
                     self._stream.extend(chunk)
                 self._extract_sysex_locked()
-        except Exception as exc:                  # pragma: no cover - defensive
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive
             self.log_lines.append(f"[readproc error] {exc!r}")
 
     def _extract_sysex_locked(self) -> None:
@@ -368,12 +591,13 @@ class BlackBox:
             except ValueError:
                 del self._stream[:start]
                 return
-            message = bytes(self._stream[start:end + 1])
-            del self._stream[:end + 1]
+            message = bytes(self._stream[start : end + 1])
+            del self._stream[: end + 1]
             body = bytes(b for b in message[1:-1] if not 0xF8 <= b <= 0xFE)
             if any(b > 0x7F for b in body):
                 self.log_lines.append(
-                    f"[rx dropped] status byte inside SysEx: {hexs(message[:16])}")
+                    f"[rx dropped] status byte inside SysEx: {hexs(message[:16])}"
+                )
                 continue
             self._sysex.append(message)
             self._decoded.append(protocol.base128_decode(body))
@@ -396,8 +620,13 @@ class BlackBox:
     # 92-byte payload is Write Flash Save, the one irreversible command.
     _FLASH_IMAGE_LENGTH_LOW_BYTE = 0x64
 
-    def send(self, raw: bytes, label: str = "",
-             consent: protocol.WriteConsent | None = None) -> bytes:
+    def send(
+        self,
+        raw: bytes,
+        label: str = "",
+        consent: protocol.WriteConsent | None = None,
+        probe: protocol.WriteProbe | None = None,
+    ) -> bytes:
         """Transmit one raw frame as SysEx.
 
         Without ``consent`` the frame must pass :func:`assert_read_only`, which
@@ -407,18 +636,26 @@ class BlackBox:
         themselves, independently of whoever built it:
 
         * the write path named by the consent must exist and be authorised;
-        * the write path must have ``hardware_confirmed=True`` - none currently
-          does, so this branch always refuses today;
-        * a ``00 59 22`` frame whose length low byte is ``0x64`` (92-byte
-          payload = a whole preset image) or whose address lies in the flash
-          preset array requires ``consent.allow_flash``.
+        * the final bytes must match that path's exact address and payload shape;
+        * the write path must have ``hardware_confirmed=True`` unless this is an
+          exact frame-bound physical probe;
+        * a frame that writes a preset image, a flash preset slot, or an
+          AMP/CAB slot-commit register requires ``consent.allow_flash``.
 
         Returns the SysEx bytes actually put on the wire.
         """
         if consent is None:
             assert_read_only(raw)
         else:
-            self._authorise_write(raw, consent)
+            self._authorise_write(raw, consent, probe=probe)
+        if self.destination is None:
+            raise TransportUnavailable("MIDI destination is not open")
+        if self._send_blocked:
+            raise SendInFlight(
+                "a previous CoreMIDI SysEx is still in an uncertain in-flight "
+                "state; this connection is blocked from sending recovery or "
+                "retry frames. Close it and inspect device state before retrying"
+            )
         sysex = protocol.sysex_wrap(raw)
         self.log(f"[out raw  ]{(' ' + label) if label else ''} {hexs(raw)}")
         self.log(f"[out sysex] {hexs(sysex)}")
@@ -437,12 +674,58 @@ class BlackBox:
         deadline = time.monotonic() + 2.0
         while not request.complete and time.monotonic() < deadline:
             time.sleep(0.005)
-        self.log(f"[out done ] complete={bool(request.complete)} "
-                 f"remaining={request.bytesToSend}")
+        self.log(
+            f"[out done ] complete={bool(request.complete)} "
+            f"remaining={request.bytesToSend}"
+        )
+        if not request.complete or request.bytesToSend:
+            # CoreMIDI documents setting ``complete`` as the asynchronous abort
+            # request. Without a completion callback there is no proof the
+            # worker has observed it yet, so retain the request buffer and block
+            # every later send on this connection. In particular, recovery must
+            # not race a late original write.
+            request.complete = 1
+            self._send_blocked = True
+            raise SendInFlight(
+                "CoreMIDI did not complete the SysEx within 2.0s "
+                f"({request.bytesToSend} byte(s) remained). Abort was requested, "
+                "but completion is unconfirmed; device state is uncertain"
+            )
         return sysex
 
-    def _authorise_write(self, raw: bytes,
-                         consent: protocol.WriteConsent) -> None:
+    def _writes_permanent_storage(self, raw: bytes, frame: protocol.Frame) -> bool:
+        """True when the wire bytes themselves are a permanent-slot write.
+
+        Independent of ``WritePath.touches_flash`` so a hand-built commit
+        frame cannot hide behind a RAM-only consent.
+        """
+        if raw[3] == self._FLASH_IMAGE_LENGTH_LOW_BYTE:
+            return True
+        preset_last = (
+            protocol.ADDR_PRESET_BASE + protocol.PRESET_COUNT * protocol.PRESET_SIZE
+        )
+        if frame.space == protocol.SPACE_PARAM and frame.address < preset_last:
+            return True
+        if frame.space != protocol.SPACE_STRING:
+            return False
+        amp_commit = (
+            protocol.ADDR_AMP_COMMIT_BASE
+            <= frame.address
+            < protocol.ADDR_AMP_COMMIT_BASE + protocol.NAME_COUNT
+        )
+        cab_commit = (
+            protocol.ADDR_CAB_COMMIT_BASE
+            <= frame.address
+            < protocol.ADDR_CAB_COMMIT_BASE + protocol.NAME_COUNT
+        )
+        return amp_commit or cab_commit
+
+    def _authorise_write(
+        self,
+        raw: bytes,
+        consent: protocol.WriteConsent,
+        probe: protocol.WriteProbe | None = None,
+    ) -> None:
         """Re-check a write frame against the bytes actually going on the wire.
 
         Deliberately independent of the builders: this must hold even when
@@ -461,33 +744,70 @@ class BlackBox:
             return
 
         frame = protocol.parse_frame(raw)
-        touches_flash = (
-            raw[3] == self._FLASH_IMAGE_LENGTH_LOW_BYTE
-            or (frame.space == protocol.SPACE_PARAM
-                and frame.address
-                < protocol.ADDR_PRESET_BASE
-                + protocol.PRESET_COUNT * protocol.PRESET_SIZE))
-        if touches_flash and not consent.allow_flash:
+        protocol.assert_write_for_path(raw, path.key)
+        writes_flash = self._writes_permanent_storage(raw, frame)
+        if writes_flash and consent.allow_flash is not True:
             raise UnsafePacket(
-                f"REFUSED: this frame writes the permanent flash preset array "
+                f"REFUSED: this frame writes permanent device storage "
                 f"(length low byte {raw[3]:#04x}, address "
                 f"{frame.address:#010x}) and WriteConsent.allow_flash is False. "
-                f"Flash writes are irreversible and can destroy the owner's "
-                f"presets: {hexs(raw)}")
-        if not path.hardware_confirmed:
+                f"Flash writes are irreversible and can destroy stored "
+                f"presets or AMP/CAB slots: {hexs(raw)}"
+            )
+        if not path.hardware_confirmed and not (
+            probe is not None and probe.matches(path.key, raw)
+        ):
             raise UnsafePacket(
                 f"REFUSED: write path {path.key!r} has never been confirmed on "
                 f"this pedal, so this transport will not put it on the wire "
                 f"regardless of consent. {path.evidence} To enable it, someone "
                 f"must perform the verification described in STATUS.md and set "
-                f"WRITE_PATHS[{path.key!r}].hardware_confirmed = True.")
+                f"WRITE_PATHS[{path.key!r}].hardware_confirmed = True."
+            )
+
+    def write_and_wait_ack(
+        self,
+        raw: bytes,
+        *,
+        label: str,
+        consent: protocol.WriteConsent,
+        probe: protocol.WriteProbe | None = None,
+        timeout: float = 3.0,
+    ) -> bytes:
+        """Send one write and require the exact compact ACK frame.
+
+        This method intentionally does not call :func:`protocol.parse_frame` on
+        the 8-byte ACK. The caller must still read the target memory back;
+        upstream implementations disagree about the ACK payload semantics.
+        """
+        self.reset_rx()
+        self.send(raw, label=label, consent=consent, probe=probe)
+        started = time.monotonic()
+        while time.monotonic() - started < timeout:
+            time.sleep(0.01)
+            _, decoded = self.received()
+            for message in decoded:
+                if protocol.is_ack(message):
+                    self.log(f"[in  ack  ] {hexs(message)}")
+                    return message
+        _, decoded = self.received()
+        compact = [hexs(message) for message in decoded if len(message) < 15]
+        raise AckTimeout(
+            f"No exact write ACK within {timeout:.1f}s. "
+            f"The requested state may already have changed; reconcile it before "
+            f"retrying. Observed compact frame(s): {compact or 'none'}"
+        )
 
     # -- request/response -------------------------------------------------
 
-    def request(self, raw: bytes, label: str = "", timeout: float = 3.0,
-                quiet_for: float = 0.5,
-                want: Callable[[list[bytes]], bool] | None = None
-                ) -> tuple[list[bytes], list[bytes]]:
+    def request(
+        self,
+        raw: bytes,
+        label: str = "",
+        timeout: float = 3.0,
+        quiet_for: float = 0.5,
+        want: Callable[[list[bytes]], bool] | None = None,
+    ) -> tuple[list[bytes], list[bytes]]:
         """Send a read command and collect the notifications that follow.
 
         Stops when `want` is satisfied, else after `quiet_for` seconds of silence
@@ -510,10 +830,15 @@ class BlackBox:
                 break
         return self.received()
 
-    def read_memory(self, address: int, size: int,
-                    space: int = protocol.SPACE_PARAM,
-                    expect_len: int | None = None,
-                    label: str = "", timeout: float = 3.0) -> Frame:
+    def read_memory(
+        self,
+        address: int,
+        size: int,
+        space: int = protocol.SPACE_PARAM,
+        expect_len: int | None = None,
+        label: str = "",
+        timeout: float = 3.0,
+    ) -> Frame:
         """Issue a memory read and return the matching, validated reply frame.
 
         The pedal emits unsolicited preset-sync frames, so replies are matched by
@@ -530,42 +855,60 @@ class BlackBox:
         def matched(decoded: list[bytes]) -> bool:
             return any(_matches(d, address) for d in decoded)
 
-        _, decoded = self.request(command, label=label, timeout=timeout,
-                                  want=matched)
+        # This unit occasionally drops the first read immediately after a
+        # CoreMIDI client reconnect while remaining fully enumerated. A second
+        # identical read succeeds. Unrelated preset-sync notifications do not
+        # suppress that retry; a matching malformed reply does, and is rejected
+        # below without asking the device again.
+        decoded: list[bytes] = []
+        for attempt in range(2):
+            _, decoded = self.request(
+                command, label=label, timeout=timeout, want=matched
+            )
+            if any(_matches(message, address) for message in decoded):
+                break
+            if attempt == 1:
+                break
+            time.sleep(0.1)
         for message in decoded:
             if _matches(message, address):
                 frame = protocol.parse_frame(message)
-                self.log(f"[in  frame] addr={frame.address:#010x} "
-                         f"size={frame.size} payload={len(frame.payload)}B "
-                         f"checksum_ok={frame.checksum_ok} "
-                         f"length_ok={frame.length_ok} size_ok={frame.size_ok}")
+                self.log(
+                    f"[in  frame] addr={frame.address:#010x} "
+                    f"size={frame.size} payload={len(frame.payload)}B "
+                    f"checksum_ok={frame.checksum_ok} "
+                    f"length_ok={frame.length_ok} size_ok={frame.size_ok}"
+                )
                 problems = []
                 if not frame.checksum_ok:
                     problems.append(
                         f"checksum {frame.checksum:#04x} != "
-                        f"{protocol.checksum_rx(frame.raw):#04x} (offset-5 rule)")
+                        f"{protocol.checksum_rx(frame.raw):#04x} (offset-5 rule)"
+                    )
                 if not frame.length_ok:
                     problems.append(
                         f"length field {frame.length} != len(payload) + 8 = "
-                        f"{len(frame.payload) + 8}")
+                        f"{len(frame.payload) + 8}"
+                    )
                 if not frame.size_ok:
                     problems.append(
-                        f"size field {frame.size} != len(payload) "
-                        f"{len(frame.payload)}")
+                        f"size field {frame.size} != len(payload) {len(frame.payload)}"
+                    )
                 if frame.size != size:
-                    problems.append(
-                        f"reply size {frame.size} != requested {size}")
+                    problems.append(f"reply size {frame.size} != requested {size}")
                 if problems:
                     raise CorruptReply(
                         f"malformed reply for {address:#010x}: "
                         + "; ".join(problems)
                         + f". Raw: {hexs(frame.raw[:32])}"
-                        + (" ..." if len(frame.raw) > 32 else ""))
+                        + (" ..." if len(frame.raw) > 32 else "")
+                    )
                 return frame
-        raise TransportUnavailable(
+        raise ReplyTimeout(
             f"No reply for address {address:#010x} within {timeout:.1f}s. "
             f"Received {len(decoded)} frame(s): "
-            f"{[hexs(d[:14]) for d in decoded] or 'none'}")
+            f"{[hexs(d[:14]) for d in decoded] or 'none'}"
+        )
 
 
 SYSEX_START_BYTE = protocol.SYSEX_START

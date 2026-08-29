@@ -1,5 +1,12 @@
 # M-Vave BlackBox — reverse-engineering documentation
 
+> **Dated evidence boundary.** The confidence tables in this directory close at the
+> read-only 2026-08-28 protocol session. They are preserved as the derivation record, not as
+> the current implementation status. Reversible RAM writes, preset flash save/restore,
+> AMP/CAB staging and commits, and the P01–P12 migration were subsequently exercised on
+> 2026-08-29. For current command support and safety limits, use
+> [`tools/blackboxctl/STATUS.md`](../../tools/blackboxctl/STATUS.md).
+
 Five documents in this directory describe the M-Vave BlackBox at four levels: the wire
 protocol it speaks over USB MIDI SysEx and BLE GATT, the 92-byte preset image that protocol
 reads and writes, the `.am2`/`.am3`/`.am4` neural-capture container and the `.wav` impulse
@@ -10,9 +17,9 @@ user's own pedal and seven unique reply frames were captured, which turned a lar
 from inherited inference into measurement. Three counts of that session all appear in these
 documents and all three are right: **four read command shapes, five address bases, seven
 transmitted byte literals** — sixteen transmissions in total across the seven preserved
-logs. **The frame format, the 92-byte memory map, the five read address bases and all 40
-slot names are now confirmed on this hardware. No write of any kind has ever been sent, so
-every write command in these documents remains a hypothesis.**
+logs. **By the close of that session, the frame format, the 92-byte memory map, the five read
+address bases and all 40 slot names were confirmed on this hardware. No write was sent in
+that session, so its write-command labels record the evidence boundary as it stood then.**
 
 ---
 
@@ -32,8 +39,9 @@ every write command in these documents remains a hypothesis.**
    [`official-docs.md`](./official-docs.md) and
    [`protocol-algorithms.md`](./protocol-algorithms.md) your task needs.
 
-If you are here to write code, `tools/blackboxctl/` already implements the read paths
-described here, and `tools/blackboxctl/STATUS.md` records what it has and has not exercised.
+If you are here to write code, `tools/blackboxctl/` implements the supported read and write
+paths. Its [`STATUS.md`](../../tools/blackboxctl/STATUS.md) records what has and has not been
+exercised on hardware after this documentation snapshot.
 
 ---
 
@@ -44,7 +52,7 @@ described here, and `tools/blackboxctl/STATUS.md` records what it has and has no
 | [`protocol-spec.md`](./protocol-spec.md) (~76 KB) | The consolidated protocol specification, and the **canonical** definition of the wire frame format (§2), the 92-byte preset image (§4), routing (§5), the name handshake (§6) and the knob dictionaries (§7). Ends with an inconsistency register (§10). | You are building or debugging anything that talks to the pedal, or you need to know what a parameter byte means. |
 | [`device-validation.md`](./device-validation.md) (~44 KB) | The live read-only session against the real pedal: seven distinct requests, seven unique replies, full hex, decoded results, and nine numbered corrections to the published documentation. Holds the only data in this directory that cannot be recaptured without the hardware. | You need evidence rather than an account, or two documents disagree and you need a tiebreaker. |
 | [`protocol-algorithms.md`](./protocol-algorithms.md) (~37 KB) | Where each part of the protocol was found in prior-art source code: the Base-128 codec with executable test vectors, the opcode table, every command literal, the model and knob tables, and a catalogue of what the published documentation gets wrong. | You are implementing the codec, need a test vector, or want the provenance of a claim. |
-| [`capture-format-spec.md`](./capture-format-spec.md) (~42 KB) | The `.am2`/`.am2Data`/`.am3Data` capture container, the neural topology inside it, the on-device flash record it becomes, the `CAB` IR record, and validation rules for capture and `.wav` files. Derived from a 1686-record corpus plus static disassembly. | You are inspecting, validating or renaming capture files, or deciding whether an IR will survive import. |
+| [`capture-format-spec.md`](./capture-format-spec.md) (~42 KB) | The `.am2`/`.am2Data`/`.am3Data` capture container, the neural topology, bundled factory-content records, observed AMP/CAB upload staging, and validation rules for capture and `.wav` files. The final persistent user-slot payload is explicitly not claimed. Derived from a 1686-record corpus plus static disassembly. | You are inspecting, validating or renaming capture files, or deciding whether an IR will survive import. |
 | [`official-docs.md`](./official-docs.md) (~34 KB) | What the vendor publishes: the official MIDI implementation chart (which exists only inside a firmware release note), the factory P01–P40 amp/cab table, the official 20 amp and 20 cab name lists, hard limits from the manuals, and the firmware version history. | You want a safe standard-MIDI control path instead of the proprietary one, or you need a vendor figure to check something against. |
 
 Supporting material in this directory:
@@ -52,16 +60,18 @@ Supporting material in this directory:
 | Path | What |
 | :--- | :--- |
 | [`logs/`](./logs/) | The seven raw device transcripts from the 2026-08-28 session, preserved verbatim. `log_all.txt` is the full end-to-end run; unsolicited `20 04` frames appear there (six) and also in `log_flash.txt` (five) and `log_generic.txt` (two). |
-| [`reference/`](./reference/) | Preserved predecessor artefacts, not maintained code: `midi_transport.py` (the only module that has ever transmitted to this pedal), `validate.py` (its driver), `base128_ref.py` (an independently written codec used as the cross-check) and `amx.py` (the capture parser behind `capture-format-spec.md`). All four lived in a temporary directory that does not survive; see [`reference/README.md`](./reference/README.md). |
-| [`contradiction-register.md`](./contradiction-register.md) | The pre-consolidation audit that drove the corrections to these five documents. Most entries are APPLIED; a few are OPEN or REPORTED-ONLY, and every row carries its disposition. Read the disposition before acting on a row. |
+| [`reference/`](./reference/) | Preserved predecessor artefacts, not maintained code: `midi_transport.py` (the transport used for the 2026-08-28 read-only session), `validate.py` (its driver), `base128_ref.py` (an independently written codec used as the cross-check) and `amx.py` (the capture parser behind `capture-format-spec.md`). All four lived in a temporary directory that does not survive; see [`reference/README.md`](./reference/README.md). |
+| [`contradiction-register.md`](./contradiction-register.md) | The pre-consolidation audit that drove the corrections to these five documents. Its dispositions close at the 2026-08-28 snapshot and are preserved as audit history; later write evidence belongs to the CLI status document. |
 
 ---
 
 ## Consolidated confidence summary
 
-This is the single place these labels are collected. Each row names the document that
-carries the detail. Nothing here is a summary of intent — a row is CONFIRMED on hardware
-only if a byte from this pedal establishes it.
+This is the single place the **2026-08-28 snapshot labels** are collected. Each row names
+the document that carries the detail. Nothing here is a summary of intent — a row is
+CONFIRMED on hardware only if a byte from this pedal established it by that date. Later
+write evidence is intentionally summarized in `tools/blackboxctl/STATUS.md`, not folded
+back into this historical table.
 
 ### A. CONFIRMED on this pedal — 2026-08-28, read-only
 
@@ -95,13 +105,18 @@ are a different kind of solid from section A.
 | A capture is a 60-byte header plus 1536 `float32`; `.am2` is the same payload headerless; there is no checksum anywhere in the container, so header edits and renames are safe. | 1686-record corpus, exhaustive checksum search | `capture-format-spec.md` §1–§5 |
 | The neural topology: 256-tap FIR, 16-unit 3-gate GRU with 832 parameters, second 256-tap FIR, three 64-tap blocks. | `libamx_parser.dylib` disassembly **and** an independent corpus variance map landing on the same boundaries | `capture-format-spec.md` §3 |
 | `AM4\0` is a real record magic in current BlackBox factory data — 7868 bytes, 928 GRU parameters — and is a different, larger record than AM2/AM3. | `blackbox_am4_ampCab.bin` | `capture-format-spec.md` §4.2 |
-| The on-device `CAB` record is 4096 bytes holding **1358 samples of 24-bit LE PCM** = 30.8 ms. This is the pedal's real IR ceiling. | Factory `*_ampCab.bin` blobs | `capture-format-spec.md` §7.1 |
+| A `CAB` record inside the bundled factory `*_ampCab.bin` blobs is 4096 bytes holding **1358 samples of 24-bit LE PCM** = 30.8 ms. | Factory `*_ampCab.bin` blobs | `capture-format-spec.md` §7.1 |
 | An official MIDI implementation chart exists, published only inside the firmware release note: PC 0–80 for presets, CC 0–5 for the six module toggles. | Vendor download server | `official-docs.md` §1 |
 | The factory P01–P40 amp/cab assignment, and the official 20 amp and 20 cab name lists. | `ANNBLACKBOX_en.pdf` | `official-docs.md` §2 |
 | AM2 → AM3 → AM4 are firmware generations with dated release notes, not a documentation error. | Vendor release note and training-software changelog | `official-docs.md` §5 |
 | The Base-128 codec, every command literal, the opcode table and the model/knob dictionaries, as read out of prior-art source. | Static analysis, reproduced as executable asserts | `protocol-algorithms.md` §1–§7 |
 
-### C. HYPOTHESIS — plausible, untested, and named as such
+### C. HYPOTHESIS at the 2026-08-28 snapshot boundary
+
+Several write rows below were resolved by the bounded 2026-08-29 probes. They remain here
+to show what the read-only session had and had not established; use the CLI status document
+for their current disposition. The unexercised generic commit and firmware-related paths
+remain outside that later evidence.
 
 | Claim | What would settle it |
 | :--- | :--- |
@@ -130,32 +145,34 @@ are a different kind of solid from section A.
 
 ### The three IR figures, reconciled
 
-This came up as a three-way contradiction and it is not one. Each figure is correct about a
-different thing, and a validator should quote the middle one:
+This came up as a three-way contradiction. The later transfer capture added a fourth
+distinction: a factory-blob record and a user-CAB staging record are not the same object.
 
 * **1024 samples / 23.2 ms** is the *vendor specification line*, from the Korean manual and
   the product copy (`official-docs.md` §3). It is intent, not contract — the vendor's own
   factory content does not meet it.
-* **1358 samples / 30.8 ms** is what an *on-device `CAB` flash record physically holds*
-  (`capture-format-spec.md` §7.1). This is the real ceiling and the figure a validator
-  should warn against.
-* **2048 frames** is the length of most of the *factory source `.wav` files* in the Mac-side
-  M-EFCS library (`presets/library.md`). Those are inputs to the upload path, not device
-  storage. Measured across all twenty: sixteen are 2048 frames, and 1AC-SeVin (10000),
-  5HIFI_OK (22026), 15JC120_BOX (13230) and 10SoldSC412 (1020) are not. Five of the twenty
-  are not 44.1 kHz either.
+* **1358 samples / 30.8 ms** is what one 4096-byte `CAB` record in the bundled factory
+  `*_ampCab.bin` files holds (`capture-format-spec.md` §7.1). That is confirmed for those
+  factory blobs, not by reading a user CAB slot back from the pedal.
+* **2048 samples / 46.4 ms** is what M-EFCS 3.5.2615 staged for a user CAB upload: a
+  20-byte header plus 6144 sample bytes, captured byte-for-byte on 2026-08-29. The firmware
+  exposes no known waveform read-back, so the final persistent representation is not proven.
+* **2048 source frames** is also, independently, the length of most factory `.wav` inputs
+  in the Mac-side M-EFCS library (`presets/library.md`). Sixteen of twenty have that length;
+  the coincidence does not make those source files a flash-layout measurement.
 
 ---
 
 ## Hard rules that apply to everything here
 
-1. **Nothing is sent to the pedal in the current phase, not even a read.** The device is
-   connected but never written to. Every write path in `blackboxctl` is gated behind
-   `hardware_confirmed=False`.
+1. **These derivation documents do not authorize a device write.** Use only the named,
+   capability-gated `blackboxctl` commands, and consult its current `STATUS.md` and recovery
+   runbook first. Never run a preserved reference script against the pedal.
 2. **Never delete a raw byte log.** The hex in `device-validation.md` and in `logs/` cannot
    be recaptured without the hardware.
-3. The M-EFCS sandbox library at
-   `~/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS` is read-only to every agent.
+3. Treat the M-EFCS sandbox library at
+   `~/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS` as read-only unless the
+   task explicitly requests a library install through the guarded CLI path.
 4. Where a statement in any document conflicts with a *measurement* in
    `device-validation.md`, the measurement wins. Where two documents infer differently and
    no measurement decides, say so and label it unresolved rather than picking one.

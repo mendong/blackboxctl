@@ -3,6 +3,12 @@
 Status: derived entirely from **static analysis of prior-art source code**. No command was
 sent to the device while producing it. Every claim below is labelled.
 
+> **Snapshot boundary:** the project-status remarks in this source-analysis document close
+> at the read-only 2026-08-28 phase. Several write paths were subsequently confirmed on
+> 2026-08-29. Keep the static-analysis provenance below, but use
+> [`tools/blackboxctl/STATUS.md`](../../tools/blackboxctl/STATUS.md) for current hardware
+> support and safety limits.
+
 > **Scope and precedence.** The wire frame format is *not* defined here. It is defined once,
 > in [`protocol-spec.md` §2](./protocol-spec.md#2-frame-format--the-canonical-model), which is
 > canonical; §3 below defers to it and keeps only this document's unique contribution, the

@@ -1,0 +1,4 @@
+*.bin binary
+docs/reverse-engineering/logs/*.txt text
+docs/reverse-engineering/reference/*.py linguist-documentation
+docs/superpowers/** linguist-documentation

@@ -4,6 +4,12 @@
 **Scope:** Everything a client needs to talk to an M-Vave BlackBox over USB MIDI SysEx or
 BLE GATT, without reading any other document.
 
+> **Snapshot boundary:** confidence labels and the empirical-confirmation tables below
+> close at the read-only 2026-08-28 session. The §2 frame grammar remains canonical, but
+> bounded writes were exercised on 2026-08-29. Consult
+> [`tools/blackboxctl/STATUS.md`](../../tools/blackboxctl/STATUS.md) for current hardware
+> status; do not infer current write support from this historical checklist.
+
 ---
 
 ## 0. Provenance, attribution and licence
@@ -761,7 +767,9 @@ Frame_Offset  == Write_Address + 14        (position inside a 107-byte notificat
   `0x10000000 + dump_index` pokes that same byte is inferred from the documented write
   literals only: Change Routing targets `0x10000002` and routing lives at index `0x02`;
   Toggle Block's example targets `…08` and FX on/off is at `0x08`; Change Knob's AMP Gain
-  example targets `…20` and gain is at `0x20`. **No write has ever been sent to this pedal.**
+  example targets `…20` and gain is at `0x20`. **No write was sent in the
+  2026-08-28 read-only session.** Later RAM and flash writes are recorded in
+  `tools/blackboxctl/STATUS.md`.
   Settling test: one Change Knob to `0x10000000 + 0x20`, then re-read the RAM dump and check
   byte `0x20`. That is a write and needs explicit user consent.
   `device-validation.md` correction 7, `tools/blackboxctl/STATUS.md`.
@@ -1189,7 +1197,7 @@ change notifications. A CLI that only reads does not need them; an interactive C
 | Base-128 encode/decode (§1.3) | **Confirmed on this pedal** end to end; also fuzz-tested locally and cross-checked against a second, independently written implementation. §1.4. |
 | Request RAM Dump, Preset Sync | **Both sent and answered on this pedal.** Constant packets, verified checksums, also exercised continuously by a shipped editor. |
 | Read String Blocks (AMP/CAB names) | **Both sent and answered on this pedal**; all 40 names read out of flash. Byte-identical literals in `bbedit`'s handshake; checksums verified. |
-| The 92-byte field table and identity offset rule | **Confirmed on this pedal for reads** — three presets decode field-for-field against values known from the GUI and from `presets/hana.md`. Writes remain untested. §4.1. |
+| The 92-byte field table and identity offset rule | **Confirmed on this pedal for reads** as of this 2026-08-28 snapshot — three presets decode field-for-field against values known from the GUI and from `presets/hana.md`. Writes were untested in that session; see `tools/blackboxctl/STATUS.md`. §4.1. |
 | Knob dictionaries | Doc and code match parameter-for-parameter with zero discrepancies. |
 | Routing semantics, `D4` constant, 6-slot ghost rule | Doc and code agree; the `D4` invariant is proven arithmetically. |
 
@@ -1198,6 +1206,11 @@ preset — can be built entirely from confirmed material.** That is the right fi
 deliverable.
 
 ### 9.2 Needed empirical confirmation — most of it has now been done
+
+> This checklist records the end of the 2026-08-28 read-only phase. ACK behavior, the RAM
+> write-address identity, preset load, indices 0–79, inactive-slot flash save/restore, and
+> AMP/CAB transfers were exercised later. Their current disposition is in
+> `tools/blackboxctl/STATUS.md`; the rows stay here as derivation history.
 
 **Settled since this table was written** — all by `device-validation.md`, 2026-08-28:
 
@@ -1283,5 +1296,6 @@ CC BY-SA 4.0.*
 physical device". **That is no longer true, and the distinction matters.** On 2026-08-28 the
 four read-only commands in §3.1 were transmitted to the user's own pedal — seven literals in
 all — and answered; the raw bytes are in [`device-validation.md`](./device-validation.md) and
-[`logs/`](./logs/). **No write of any kind has ever been sent.** Every command in §3.2 and
-every claim about writes in §4.1 remains untested against silicon.*
+[`logs/`](./logs/). **No write was sent during that session.** Later bounded write probes
+are deliberately documented in `tools/blackboxctl/STATUS.md`, rather than retroactively
+rewriting this dated session summary.*

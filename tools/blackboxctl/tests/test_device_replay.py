@@ -6,17 +6,19 @@ CoreMIDI I/O with a replay of the exact SysEx messages the pedal sent on
 on top. That covers everything in transport.py except the actual send and the
 MIDIReadProc callback registration.
 
-What it does NOT cover, and what STATUS.md records as still unverified:
-MIDISendSysex, its completion wait, MIDIInputPortCreate/MIDIPortConnectSource,
-and endpoint resolution against a live device.
+It does not itself cover native MIDISendSysex, callback registration, or live
+endpoint resolution. Those paths have separate unit tests and dated physical
+evidence in STATUS.md; this fixture remains intentionally offline.
 """
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import pytest
+from fixtures import device_frames as fx
 
 from blackboxctl import cli, protocol
-from fixtures import device_frames as fx
 
 transport = pytest.importorskip("blackboxctl.transport")
 
@@ -25,7 +27,7 @@ class ReplayDevice(transport.BlackBox):
     """A BlackBox whose wire is the recorded log instead of CoreMIDI."""
 
     #: address -> the reply frame the real pedal returned for it
-    REPLIES = {
+    REPLIES: ClassVar[dict[int, bytes]] = {
         protocol.ADDR_LIVE_RAM: fx.REPLY_RAM_DUMP,
         protocol.ADDR_CURRENT_PRESET: fx.REPLY_PRESET_SYNC,
         protocol.ADDR_AMP_NAMES: fx.REPLY_AMP_NAMES,
@@ -35,8 +37,9 @@ class ReplayDevice(transport.BlackBox):
         40 * protocol.PRESET_SIZE: fx.REPLY_FLASH_40,
     }
 
-    def __init__(self):                             # noqa: D107
+    def __init__(self):
         import threading
+
         self._log_sink = None
         self.log_lines = []
         self._lock = threading.Lock()
@@ -75,8 +78,9 @@ def replay(monkeypatch):
 
 
 def test_read_memory_returns_the_recorded_ram_dump(replay):
-    frame = replay.read_memory(protocol.ADDR_LIVE_RAM, protocol.PRESET_SIZE,
-                               timeout=1.0)
+    frame = replay.read_memory(
+        protocol.ADDR_LIVE_RAM, protocol.PRESET_SIZE, timeout=1.0
+    )
     assert frame.raw == fx.REPLY_RAM_DUMP
     assert frame.well_formed
     assert replay.sent == [fx.READ_COMMANDS["ram_dump"]]
@@ -84,11 +88,31 @@ def test_read_memory_returns_the_recorded_ram_dump(replay):
 
 def test_read_memory_demultiplexes_past_an_unsolicited_frame(replay):
     """An unrequested 0x20000000 frame arrives first; it must not be returned."""
-    frame = replay.read_memory(40 * protocol.PRESET_SIZE, protocol.PRESET_SIZE,
-                               timeout=1.0)
+    frame = replay.read_memory(
+        40 * protocol.PRESET_SIZE, protocol.PRESET_SIZE, timeout=1.0
+    )
     assert frame.address == 40 * protocol.PRESET_SIZE
     assert frame.raw == fx.REPLY_FLASH_40
     assert len(replay.received()[1]) >= 2
+
+
+def test_read_memory_retries_one_dropped_zero_frame_request(replay, monkeypatch):
+    original = replay.request
+    calls = 0
+
+    def dropped_once(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return [], []
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(replay, "request", dropped_once)
+    frame = replay.read_memory(
+        protocol.ADDR_LIVE_RAM, protocol.PRESET_SIZE, timeout=1.0
+    )
+    assert frame.raw == fx.REPLY_RAM_DUMP
+    assert calls == 2
 
 
 def test_read_memory_raises_on_a_corrupt_reply(replay, monkeypatch):
@@ -97,14 +121,14 @@ def test_read_memory_raises_on_a_corrupt_reply(replay, monkeypatch):
     broken[protocol.ADDR_LIVE_RAM] = fx.REPLY_RAM_DUMP[:60] + fx.REPLY_RAM_DUMP[-1:]
     monkeypatch.setattr(replay, "REPLIES", broken)
     with pytest.raises(transport.CorruptReply, match="size field"):
-        replay.read_memory(protocol.ADDR_LIVE_RAM, protocol.PRESET_SIZE,
-                           timeout=1.0)
+        replay.read_memory(protocol.ADDR_LIVE_RAM, protocol.PRESET_SIZE, timeout=1.0)
 
 
 def run_cli(*args) -> tuple[int, dict]:
+    import contextlib
     import io
     import json
-    import contextlib
+
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
         code = cli.main(["--json", *args])
@@ -131,10 +155,12 @@ def test_cli_device_dump_decodes_the_live_preset_with_knobs(replay):
     blocks = {b["key"]: b for b in doc["preset"]["blocks"]}
     assert blocks["amp"]["model_name"] == "3JC120_CL"
     assert blocks["cab"]["model_name"] == "5HIFI_OK"
-    assert [(k["name"], k["value"]) for k in blocks["amp"]["knobs"]] \
-        == fx.EXPECTED_RAM["amp_knobs"]
-    assert [(k["name"], k["value"]) for k in blocks["cab"]["knobs"]] \
-        == fx.EXPECTED_RAM["cab_knobs"]
+    assert [(k["name"], k["value"]) for k in blocks["amp"]["knobs"]] == fx.EXPECTED_RAM[
+        "amp_knobs"
+    ]
+    assert [(k["name"], k["value"]) for k in blocks["cab"]["knobs"]] == fx.EXPECTED_RAM[
+        "cab_knobs"
+    ]
 
 
 def test_cli_device_preset_41_matches_the_gui_values(replay):
@@ -147,8 +173,9 @@ def test_cli_device_preset_41_matches_the_gui_values(replay):
     assert blocks["amp"]["model_name"] == "1J900_CL"
     assert blocks["cab"]["model_name"] == "7VOX_AC30"
     assert blocks["dly"]["enabled"] is False
-    knobs = {b["key"]: {k["name"]: k["value"] for k in b["knobs"]}
-             for b in preset["blocks"]}
+    knobs = {
+        b["key"]: {k["name"]: k["value"] for k in b["knobs"]} for b in preset["blocks"]
+    }
     assert knobs["amp"]["Gain"] == 45
     assert knobs["mod"]["Mix"] == 12
     assert knobs["rev"]["Mix"] == 12

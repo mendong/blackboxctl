@@ -4,27 +4,25 @@
 
 - Captured: 2026-07-20 KST, revised to capture-based presets 2026-08-28 KST
 - M-EFCS app: `3.5.2615` (`CFBundleVersion` `3052615`)
-- Connected device label: `BLACKBOX v20`. The pedal is connected.
+- Last observed connection label: `BLACKBOX v20` (2026-08-29). Re-check endpoints before
+  assuming the pedal is still connected.
 - Guitar: HSS Strat-style guitar
-- Protected preset: P41 `Wonderwall Live` — do not modify
+- P41 was retired by the owner on 2026-08-29; it is no longer protected
 - Slot maps and library rules: [library.md](library.md)
 
-## What is on the device right now
+## Recorded device state after the 2026-08-29 migration
 
-**None of the capture-based target values below has been written.** P01, P02 and P03
-currently hold the built-in-amp-model values recorded under
-[Currently on the device](#currently-on-the-device--the-built-in-amp-model-version), which
-were written on 2026-07-20.
+The capture-based P01, P02 and P03 below were written by `blackboxctl` on 2026-08-29.
+Each 92-byte image was built from the pre-write backup, saved to its inactive slot, and
+read back byte-for-byte. The older built-in-model section is retained as history.
 
-All three are now confirmed by reading flash. P01 and P03 were read on 2026-08-28; **P02
-was read later the same day, in the second device session, closing the last gap.** P02's
-stored image points at amp slot 4 `4BLUE_OD` and IR slot 7 `7VOX_AC30`, exactly what the
-July record says was written.
+All three capture-based images were confirmed by the final 2026-08-29 flash read. The
+following earlier evidence is a **pre-migration snapshot**: P01 and P03 were read on
+2026-08-28, and P02 was read later the same day. That old P02 image pointed at amp slot 4
+`4BLUE_OD` and IR slot 7 `7VOX_AC30`, matching the July record.
 
-That makes P02 relevant to slot reservations for a reason nothing here noticed before: it
-shares **IR slot 7** with the protected P41, along with P13 and P14. Reserving slot 7 for
-P41 protects all four. See
-[library.md](library.md#slot-exposure-what-a-slot-write-actually-changes).
+The 2026-08-28 slot-sharing audit remains useful historical evidence, but every AMP/CAB
+slot was intentionally reassigned on 2026-08-29.
 
 To check any of this without loading a preset:
 
@@ -78,10 +76,10 @@ All three slots had total volume `85`. Enabled/disabled states below are based o
 - P02: `Hana Edge` — neck single-coil
 - P03: `Hana Acoustic Clean` — neck+middle or middle single-coil
 
-## Target values — capture based, not yet written
+## Target values — capture based, written 2026-08-29
 
-These are the design targets. **None of them is on the device.** They depend on amp slots
-2, 12 and 20 and IR slots 5, 8 and 19, none of which has been written either.
+These are the design targets now stored on the device. They use amp slots 2, 12 and 20
+and IR slots 5, 8 and 19 from the new library.
 
 Written against the amp and IR slot maps in [library.md](library.md). All slots use total
 volume `85`. Amp EQ values are starting points; the amp block still applies EQ on top of a
@@ -132,13 +130,11 @@ with one of the acoustic IRs, so the pairing is now the intended one rather than
 workaround. Low Cut is lower than on the electric presets because an acoustic simulation
 needs its body resonance. Alternative CAB: slot 20 Taylor 414.
 
-## Currently on the device — the built-in-amp-model version
+## Historical snapshot — built-in-amp-model version before 2026-08-29
 
-**Superseded as a target. Still what the pedal holds.** These values were written on
-2026-07-20 from the built-in amp models, before the move to capture files. They are no
-longer what P01-P03 are meant to become — the targets are the capture-based values above —
-but until those are written, this section describes what is actually stored, and therefore
-what a preset write will overwrite.
+**Superseded and no longer stored.** These values were written on 2026-07-20 from the
+built-in amp models and were still present when read on 2026-08-28. The capture-based
+images above replaced them on 2026-08-29. This section remains as pre-migration evidence.
 
 Corroborated on 2026-08-28 by reading flash over USB MIDI SysEx, read-only. P01 (flash
 index 0) and P03 (flash index 2) decoded field for field to the values below, including the
@@ -154,11 +150,11 @@ both records are consistent with, but that convention is inferred from these two
 and is documented nowhere upstream — so these two fields agree **to within one display
 step**, not bit-exactly. Every other field is an exact integer match. See
 [device-validation.md](../docs/reverse-engineering/device-validation.md) STEP 6a and 6b.
-**P02 was never read from flash**, so its stored contents rest on the July GUI session
-alone.
+P02 was not read in the first session, but a second read-only session on 2026-08-28 closed
+that gap and matched the July GUI record.
 
-Which slots these point at, which matters because those slots are scheduled to be
-rewritten: P01 uses amp slot 2 and IR slot 11; P03 uses amp slot 3 and IR slot 5.
+At that snapshot, P01 used amp slot 2 and IR slot 11; P03 used amp slot 3 and IR slot 5.
+The 2026-08-29 migration later reassigned those shared slots and rewrote all three presets.
 
 ### P01 — built-in (confirmed present in flash, 2026-08-28)
 
@@ -169,7 +165,7 @@ rewritten: P01 uses amp slot 2 and IR slot 11; P03 uses amp slot 3 and IR slot 5
 - REV: `Room`; Decay 28, Mix 20, HPass 60, LPass 45, Depth 45; enabled
 - DLY: `Dual`; Time 18, Fb 6, Mix 6, Grit 0, Speed 0, Depth 0; enabled
 
-### P02 — built-in (never read back from the device)
+### P02 — built-in (confirmed in the second 2026-08-28 read session)
 
 - FX: `Compress`; Gate 15, Sustain 35, Attack 60, Level 50; enabled
 - AMP: `4BLUE_OD`; Gain 38, Level 70, Bass 42, Mid 58, Treble 50; enabled
@@ -189,28 +185,27 @@ rewritten: P01 uses amp slot 2 and IR slot 11; P03 uses amp slot 3 and IR slot 5
 
 ## Verification
 
-Built-in-model version, 2026-07-20 — the version now on the device:
+Built-in-model version, 2026-07-20 — historical verification before replacement:
 
 - Device write: passed; M-EFCS displayed `Success!` after saving P01, P02, and P03.
 - Persistence: passed; each slot was switched away from and re-opened, and the values
   remained stored.
-- Independent confirmation, 2026-08-28: P01 and P03 read back from flash and decoded to
-  the recorded values field for field. P02 not read.
+- Independent confirmation, 2026-08-28: P01 and P03 read back in the first session; P02
+  read back in the second. They matched the recorded values subject to the two Low Cut
+  display-step caveats above.
 - P41 safety: passed. Confirmed again on 2026-08-28 by decoding P41 from flash: amp model
   byte `0x00` (amp slot 1) and CAB model byte `0x06` (IR slot 7), both untouched.
 - Player listening check: never completed.
 
-Capture-based version — **nothing written**:
+Capture-based version — **written and byte-verified 2026-08-29**:
 
 - Library install: passed. The captures and IRs named above are present in the M-EFCS
   AMP and CAB lists after an app restart, verified by searching the lists, and
   `python -m blackboxctl library diff` resolves every one of them to a file on disk.
-- Amp and IR slot writes: **not done.** Only IR slot 1 has ever been written on this
-  pedal. Amp slots 2, 3, 12 and 20 and IR slots 5, 8 and 19 — every slot these three
-  presets depend on — still hold their factory contents.
-- Preset writes for P01-P03: **not done.** The device still holds the built-in-model
-  version.
+- Amp and IR slot writes: done; the full 20+20 name tables match
+  [`device-library.json`](device-library.json).
+- Preset writes for P01-P03: done; every 92-byte read-back matched its rendered image.
 - Player listening check: not done.
 
-The pedal is connected, so these steps are unblocked. They need a guitar and a listener,
-not a device command.
+The remaining check needs the guitar, a listener, and a fresh connection check; it is not
+proved by another stored-state read.

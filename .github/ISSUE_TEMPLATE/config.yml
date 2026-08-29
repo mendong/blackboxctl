@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Device safety report
+    url: https://github.com/mendong/blackboxctl/security/advisories/new
+    about: Unexpected writes, consent bypasses, or anything that could brick a pedal. Private.

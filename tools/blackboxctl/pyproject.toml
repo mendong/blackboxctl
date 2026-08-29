@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "blackboxctl"
 version = "0.1.0"
-description = "Read-only command line tool for the M-Vave BlackBox amp modeller and its M-EFCS file library"
+description = "Safe command line control for the M-Vave BlackBox amp modeller and its M-EFCS file library"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
@@ -15,18 +15,58 @@ classifiers = [
   "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
   "Operating System :: MacOS :: MacOS X",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Multimedia :: Sound/Audio :: MIDI",
 ]
 dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.6"]
 
 [project.scripts]
 blackboxctl = "blackboxctl.cli:main"
 
 [project.urls]
+Homepage = "https://github.com/mendong/blackboxctl"
+Issues = "https://github.com/mendong/blackboxctl/issues"
 "Upstream protocol documentation" = "https://github.com/jvsobrinho/mvave-blackbox-ble"
 
 [tool.setuptools]
 packages = ["blackboxctl"]
+license-files = ["LICENSE", "NOTICE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+  "B",
+  "BLE",
+  "C4",
+  "DTZ",
+  "E4",
+  "E7",
+  "E9",
+  "F",
+  "I",
+  "PIE",
+  "PLW",
+  "PYI",
+  "RET",
+  "RUF",
+  "SIM",
+  "TRY",
+  "UP",
+]
+ignore = [
+  "PLW0603", # one lazy CoreMIDI framework cache
+  "TRY003",  # user-facing validation messages belong at their raise sites
+  "TRY301",  # explicit acquisition failure branches are easier to audit inline
+]

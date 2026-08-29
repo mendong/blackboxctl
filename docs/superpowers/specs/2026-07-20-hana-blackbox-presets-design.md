@@ -4,8 +4,8 @@
 >
 > This design specifies P01-P03 using the BlackBox's **built-in amp models**. That approach
 > was abandoned on 2026-08-28 in favour of community capture files plus third-party IRs.
-> The values here were written to the device on 2026-07-20 and are still stored there, but
-> they are no longer the target. Current design:
+> The values here were written to the device on 2026-07-20, preserved as historical
+> evidence, and replaced by the capture-based bank on 2026-08-29. Current design:
 > [`presets/hana.md`](../../../presets/hana.md). Tone source policy:
 > [`presets/library.md`](../../../presets/library.md).
 

@@ -2,8 +2,13 @@
 
 Date: 2026-08-28
 Host: macOS (Darwin 25.4.0), Apple Silicon
-Device: M-Vave BlackBox, connected over USB, serial `4150353439333111`
+Device: M-Vave BlackBox, connected over USB (serial intentionally omitted)
 Transport under test: USB MIDI SysEx (Base-128), **not** BLE.
+
+> **Dated session record:** every “never sent” or “unverified” statement in this file is
+> scoped to the 2026-08-28 read-only session whose raw bytes it preserves. Bounded write
+> validation happened separately on 2026-08-29; current implementation status lives in
+> [`tools/blackboxctl/STATUS.md`](../../tools/blackboxctl/STATUS.md).
 
 **Every command sent during this session was read-only.** No `00 59 22` (write
 opcode) frame, no Load Preset, no Toggle, no Knob, no Routing, no Commit, no Write
@@ -45,7 +50,7 @@ this document cited them as `scratchpad/proto/…`, which no longer resolves.
 
 | File | Purpose |
 | :--- | :--- |
-| [`reference/midi_transport.py`](./reference/midi_transport.py) | CoreMIDI (ctypes) transport, Base-128 codec, checksum, read-only command builders, safety gate. **The only module that has ever transmitted to this pedal.** |
+| [`reference/midi_transport.py`](./reference/midi_transport.py) | CoreMIDI (ctypes) transport, Base-128 codec, checksum, read-only command builders, safety gate. **The only module used to transmit during this 2026-08-28 session.** |
 | [`reference/validate.py`](./reference/validate.py) | Step-by-step validation driver (`codec`, `endpoints`, `ram`, `preset`, `cab`, `amp`, `flash`, `flash:N`, `all`) |
 | [`logs/log_all.txt`](./logs/log_all.txt) | Full transcript of the final end-to-end run, including the six unsolicited `20 04` frames it drew. Unsolicited frames also appear in `log_flash.txt` (five) and `log_generic.txt` (two). |
 | [`logs/log_generic.txt`](./logs/log_generic.txt) | Live re-run through the generalized `cmd_read()` primitive |
@@ -55,7 +60,8 @@ this document cited them as `scratchpad/proto/…`, which no longer resolves.
 The frames themselves are additionally mirrored as test fixtures in
 `tools/blackboxctl/tests/fixtures/device_frames.py`. See
 [`reference/README.md`](./reference/README.md) for what those preserved modules are and are
-not. **Do not run them against the pedal** — the current phase sends nothing to the device.
+not. **Do not run them against the pedal** — they are preserved evidence, not the supported
+interface. Use `tools/blackboxctl/` and its current status document.
 
 ## Note on the toolchain
 

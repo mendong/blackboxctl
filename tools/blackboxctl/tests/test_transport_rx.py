@@ -5,8 +5,9 @@ CoreMIDI lays it out on arm64 and handed to BlackBox._on_packets. That exercises
 the packet walk, the cross-callback stream reassembly, the real-time filter and
 the SysEx extractor without opening a device.
 
-The send path, MIDISendSysex completion wait and endpoint resolution are NOT
-covered here and remain unverified on hardware; see STATUS.md.
+This file covers receive mechanics only. The send path, completion wait, and
+endpoint resolution have separate unit tests and were exercised on hardware;
+see STATUS.md for the dated evidence boundary.
 """
 
 from __future__ import annotations
@@ -14,9 +15,9 @@ from __future__ import annotations
 import ctypes
 
 import pytest
+from fixtures import device_frames as fx
 
 from blackboxctl import protocol
-from fixtures import device_frames as fx
 
 transport = pytest.importorskip("blackboxctl.transport")
 
@@ -33,8 +34,9 @@ def packet_list(*chunks: bytes) -> ctypes.Array:
     offset = 4
     for chunk in chunks:
         ctypes.memmove(ctypes.byref(buf, offset), bytes(8), 8)
-        ctypes.memmove(ctypes.byref(buf, offset + 8),
-                       len(chunk).to_bytes(2, "little"), 2)
+        ctypes.memmove(
+            ctypes.byref(buf, offset + 8), len(chunk).to_bytes(2, "little"), 2
+        )
         ctypes.memmove(ctypes.byref(buf, offset + 10), chunk, len(chunk))
         offset = (offset + 10 + len(chunk) + 3) & ~3
     return buf
@@ -43,10 +45,11 @@ def packet_list(*chunks: bytes) -> ctypes.Array:
 class Receiver(transport.BlackBox):
     """BlackBox with the CoreMIDI binding skipped - receive logic only."""
 
-    def __init__(self):                             # noqa: D107
+    def __init__(self):
         self._log_sink = None
         self.log_lines = []
         import threading
+
         self._lock = threading.Lock()
         self._stream = bytearray()
         self._sysex = []
@@ -96,7 +99,7 @@ def test_realtime_bytes_inside_a_sysex_are_filtered_out():
     """
     rx = Receiver()
     whole = fx.RX_SYSEX_CAB_NAMES
-    with_clock = whole[:170] + b"\xF8" + whole[170:]
+    with_clock = whole[:170] + b"\xf8" + whole[170:]
     rx.feed(with_clock)
     sysex, decoded = rx.received()
     assert len(sysex) == 1
@@ -140,3 +143,56 @@ def test_matches_routes_replies_by_address_not_arrival_order():
     assert not transport._matches(fx.REPLY_PRESET_SYNC, protocol.ADDR_LIVE_RAM)
     assert transport._matches(fx.REPLY_PRESET_SYNC, protocol.ADDR_CURRENT_PRESET)
     assert transport._matches(fx.REPLY_FLASH_40, 40 * protocol.PRESET_SIZE)
+
+
+def test_read_retries_after_only_an_unrelated_notification(monkeypatch):
+    class Reader:
+        def __init__(self):
+            self.calls = 0
+
+        def request(self, *_args, **_kwargs):
+            self.calls += 1
+            decoded = [fx.REPLY_PRESET_SYNC] if self.calls == 1 else [fx.REPLY_RAM_DUMP]
+            return [], decoded
+
+        def log(self, _message):
+            return None
+
+    reader = Reader()
+    monkeypatch.setattr(transport.time, "sleep", lambda _seconds: None)
+
+    frame = transport.BlackBox.read_memory(
+        reader, protocol.ADDR_LIVE_RAM, protocol.PRESET_SIZE
+    )
+
+    assert reader.calls == 2
+    assert frame.payload == protocol.parse_frame(fx.REPLY_RAM_DUMP).payload
+
+
+def test_read_does_not_retry_a_malformed_matching_reply(monkeypatch):
+    corrupted = bytearray(fx.REPLY_RAM_DUMP)
+    corrupted[-1] ^= 1
+
+    class Reader:
+        calls = 0
+
+        def request(self, *_args, **_kwargs):
+            self.calls += 1
+            return [], [bytes(corrupted)]
+
+        def log(self, _message):
+            return None
+
+    reader = Reader()
+    monkeypatch.setattr(transport.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(transport.CorruptReply, match="malformed reply"):
+        transport.BlackBox.read_memory(
+            reader, protocol.ADDR_LIVE_RAM, protocol.PRESET_SIZE
+        )
+    assert reader.calls == 1
+
+
+def test_midipacket_stride_matches_arm_and_intel_macros():
+    assert transport._next_packet_offset(4, 3, align4=True) == 20
+    assert transport._next_packet_offset(4, 3, align4=False) == 17

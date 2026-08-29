@@ -4,6 +4,11 @@ Probe date: 2026-08-28. Every claim below is labelled **CONFIRMED** (observed on
 machine, with the method stated) or **HYPOTHESIS** (with evidence and the test that
 settles it).
 
+> **Snapshot boundary:** this vendor/source inventory records the 2026-08-28 probe, with
+> IR-transfer reconciliation added after the 2026-08-29 capture. It does not describe the
+> current CLI support matrix; use
+> [`tools/blackboxctl/STATUS.md`](../../tools/blackboxctl/STATUS.md) for that.
+
 **Headline result: an official MIDI implementation chart exists.** It is not in any user
 manual. M-Vave published it inside the plain-text firmware release note
 `BlackBox.txt` on their own download server, under the entry `BLACKBOX_2024_07_08`.
@@ -14,8 +19,9 @@ toggles. Full transcription in section 1.
 
 ## 0. Source inventory
 
-All files fetched to
-`/private/tmp/claude-501/-Users-mendong-Documents-black-box--claude-worktrees-blackbox-presets-ir-setup-d4cb38/ab32803c-e35f-4920-88d6-4f38bcbad797/scratchpad/manuals/`
+The source files were fetched into a session-scoped temporary directory that no longer
+resolves. The inventory and source URLs below are preserved as evidence; re-fetch from the
+recorded origins rather than relying on the old scratch path.
 
 | File | Origin | What it is |
 |---|---|---|
@@ -264,18 +270,18 @@ truncated, hard — that much is right, and it is the answer to "are long IRs tr
 ⚠️ **But 1024 is intent, not contract, and it is not the measured ceiling.** Two things
 contradict it, both measured rather than published:
 
-* **The on-device `CAB` flash record holds 1358 samples of 24-bit PCM = 30.8 ms**, measured
-  directly from the factory `*_ampCab.bin` blobs (`capture-format-spec.md` §7.1). That is
-  the real budget, and it is larger than the spec line.
+* **A `CAB` record in the bundled factory `*_ampCab.bin` blobs holds 1358 samples of
+  24-bit PCM = 30.8 ms** (`capture-format-spec.md` §7.1). This is a factory-file layout,
+  not a live read-back of a user slot.
 * **The vendor's own factory content does not meet its own spec.** Of the twenty factory IR
   `.wav` files in the M-EFCS library, five are not 44.1 kHz (three at 48 kHz, two at 96 kHz)
   and nineteen are not 1024 frames — sixteen are 2048 (`capture-format-spec.md` §8.1,
   `presets/library.md`).
 
-So the three figures in circulation — 1024, 1358, 2048 — are not a contradiction; they
-measure the specification, the device record and the source files respectively. The
-reconciliation table is at `capture-format-spec.md` §7.1, and **a validator should warn at
-1358 taps / 30.8 ms and name the vendor's 1024 alongside it.**
+The later transfer capture adds another meaning for 2048: M-EFCS 3.5.2615 staged 2048
+samples for a user upload on 2026-08-29. The figures therefore measure the vendor specification, the
+factory-blob record, the staging transfer, and source files. The reconciliation table is at
+`capture-format-spec.md` §7.1. The final persistent user-slot layout remains unreadable.
 
 Related **CONFIRMED** IR CAB module parameters, Korean manual p.12:
 - Level
@@ -545,9 +551,10 @@ From the official release note:
 1. **The safe control path is real and documented.** Use PC for preset switching and
    CC 0–5 for module toggles, over the USB MIDI endpoint CoreMIDI already exposes.
    Prefer it over the proprietary flash path for anything it can do.
-2. **Long IRs are truncated — but the ceiling is 1358 taps / 30.8 ms, not the published
-   1024 / 23.2 ms.** The 1024 figure is the vendor's spec line and its own factory content
-   does not meet it. §3, and the reconciliation at `capture-format-spec.md` §7.1.
+2. **Long IRs are truncated by the observed 2048-sample M-EFCS staging path.** The vendor
+   publishes 1024 samples, while bundled factory blobs use 1358-sample records. Those are
+   different artifacts, and the final user-slot representation cannot be read back. §3 and
+   the reconciliation at `capture-format-spec.md` §7.1.
 3. **.am2 / .am3 / .am4 are generations, not a doc error.** AM4 needs V20. **Which build
    this pedal runs is UNRESOLVED**, so whether it takes AM4 is too. §5.
 4. **The official amp and cab name lists are confirmed** — all 40 names were read out of

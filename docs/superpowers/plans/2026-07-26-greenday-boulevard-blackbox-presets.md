@@ -17,10 +17,10 @@
 > later abandoned: presets are now built from community capture files plus third-party IRs.
 > See [`presets/boulevard-of-broken-dreams.md`](../../../presets/boulevard-of-broken-dreams.md)
 > for the current targets and [`presets/library.md`](../../../presets/library.md) for the
-> tone source policy. The current project phase sends **nothing** to the pedal, not even
-> reads.
+> tone source policy. Current hardware/write status is recorded separately in
+> [`tools/blackboxctl/STATUS.md`](../../../tools/blackboxctl/STATUS.md).
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical agent instruction. Ignore it. See [`docs/superpowers/README.md`](../../README.md).
 
 **Goal:** Store a clean tremolo verse preset in P04 and a British chorus-crunch preset in P05 without changing P01-P03 or P41.
 

@@ -32,16 +32,18 @@ Sources are listed at the bottom of this file.
   `docs/reverse-engineering/official-docs.md` infers from a firmware filename on disk that
   this unit runs V19. The two have not been reconciled; neither should be quoted as the
   firmware version. The read-only device-name query would settle it.
-- The pedal is **connected**. All read commands were re-verified on 2026-08-28, including
-  reading all 80 presets and both slot name tables.
+- Last connection evidence: all read commands were re-verified on 2026-08-28, including all
+  80 presets and both slot name tables; the migration completed on 2026-08-29. Re-check
+  endpoints before assuming the pedal is still connected.
 - Device capacity: 20 amp slots, 20 IR/CAB slots, both replaceable. The 20 factory amp
   models can be restored from the PC version of M-EFCS.
 
-## Reading device state
+## Reading and writing device state
 
 Since 2026-08-28 the pedal can be read directly, without the GUI and without loading
-anything, using [`tools/blackboxctl`](../tools/blackboxctl/). It is read-only by
-construction and has never written to this pedal.
+anything, using [`tools/blackboxctl`](../tools/blackboxctl/). On 2026-08-29 its bounded
+write paths were also physically verified and the complete AMP/CAB library was applied
+without GUI clicks.
 
 ```sh
 cd tools/blackboxctl
@@ -49,9 +51,14 @@ python -m blackboxctl selftest      # offline protocol check; touches nothing
 python -m blackboxctl device names  # all 20 amp and 20 IR slot names, straight from flash
 python -m blackboxctl device preset N   # decode stored PNN without loading it
 python -m blackboxctl library diff  # compare this file's slot maps against what is on disk
+python -m blackboxctl device library-apply ../../presets/device-library.json  # dry run
 ```
 
-`device names` is the authority on what is actually in each slot; this file is the plan.
+`device names` is the live authority on what is actually in each slot;
+[`device-library.json`](device-library.json) is the applied manifest. Its
+`source_set_sha256` pins the ordered 40-file source set so a same-named changed
+capture or IR is refused during offline preflight. This file
+explains its design and dated evidence.
 `device preset N` is the way to satisfy the "record current contents before overwriting"
 rule in [AGENTS.md](../AGENTS.md). Read
 [tools/blackboxctl/STATUS.md](../tools/blackboxctl/STATUS.md) before trusting any claim
@@ -77,7 +84,8 @@ It contains nine subfolders. Only the first three matter for this work:
 | `audio_library` | one `files` subfolder used by the app | no |
 | `downloadFile`, `otherFile`, `shareFile` | empty | no |
 
-Counts verified read-only on 2026-08-28 and unchanged since.
+Counts are a host-library snapshot verified read-only on 2026-08-28, after the additions
+described below. Recount before relying on them in a later session.
 
 Verified behaviour: files copied straight into `ampFile` / `cabFile` do **not** appear
 while the app is running, but they do appear after M-EFCS is restarted. The app keeps no
@@ -94,16 +102,16 @@ Install procedure:
 `python -m blackboxctl library install` performs step 1 and `library restart-editor`
 performs step 2. Both are dry runs unless given `--yes`.
 
-A backup of the library as it was before this change is kept **outside the repository**,
-in a session-scoped temp directory that will eventually be purged:
+A backup of the library as it was before this change is kept **outside the repository**
+in durable user storage with mode `0600`:
 
 ```
-/private/tmp/claude-501/-Users-mendong-Documents-black-box--claude-worktrees-blackbox-presets-ir-setup-d4cb38/
-  e540b214-9e36-4e96-abd6-017d7cf0c2eb/scratchpad/backup/M-EFCS-library-before-20260828-041029.tgz
+~/.local/share/blackboxctl/backups/M-EFCS-library-before-20260828-041029.tgz
 ```
 
+SHA-256 `8ba9355a2fec2c6e6acdef865eb79c68ef0d25a8a9d5305aa9c67d6bdb49e27a`;
 3,525,756 bytes; contains `ampFile` (15 captures), `cabFile` (210 IRs) and `dsFile` (14)
-as they were. **Move it somewhere durable.** It is the only restore point for the
+as they were. Retain it in durable storage; it is the only restore point for the
 pre-existing library, and the community pack it was displaced by is not archived anywhere
 on this machine.
 
@@ -183,22 +191,19 @@ here rather than restating it:
   other than 24. Nothing here establishes which channel it keeps or whether it sums them.
 * **Not demonstrated, and not what the table above shows.** That the pedal is *running* a
   32-bit float or 96 kHz IR. The table measures `.wav` files in the Mac-side library, which
-  are inputs to the upload path. The on-device `CAB` record is 1358 samples of 24-bit LE
-  PCM — see
-  [capture-format-spec.md §7.1](../docs/reverse-engineering/capture-format-spec.md), so
-  whatever the source format, something in the chain converts before storage. Which side
-  converts, host or pedal, is untested.
+  are inputs to the upload path. The observed user-CAB staging record and the bundled
+  factory-blob records are both signed 24-bit PCM, so something converts before or during
+  upload. The final user-slot waveform cannot be read back.
 
-**On the 1024 figure.** Three different numbers are in circulation and they measure
-different things. 1024 is the vendor's published spec line. 2048 is the frame count of
-most factory *source* `.wav` files in this Mac library, which are inputs to the upload
-path, not device storage. The real ceiling is what an on-device CAB flash record
-physically holds: 1358 taps of 24-bit PCM in a 4096-byte record, 30.8 ms at 44.1 kHz —
-see
-[capture-format-spec.md §8](../docs/reverse-engineering/capture-format-spec.md). That is
-the number that governs truncation.
+**On the 1024/1358/2048 figures.** They measure different artifacts. 1024 is the vendor's
+published spec line. A bundled factory-blob CAB record holds 1358 taps. Most factory source
+`.wav` files have 2048 frames, and M-EFCS 3.5.2615 also staged 2048 samples in the observed
+2026-08-29 user upload.
+The latter two are independently observed facts, not proof that the final flash layout has
+2048 taps. See
+[capture-format-spec.md §7.1](../docs/reverse-engineering/capture-format-spec.md).
 
-**The installed user IRs, measured the same way:**
+**Pre-migration selected-IR snapshot, measured the same way on 2026-08-28:**
 
 | Slot | Ch | Rate | Bits | Frames | Duration |
 | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -222,8 +227,10 @@ the number that governs truncation.
 | 19 | 1 | 44.1 k | 24 | 2048 | 46 ms |
 | 20 | 1 | 44.1 k | 24 | 22050 | 500 ms |
 
-Slot 7 is omitted because it keeps its factory IR. Every one of the nineteen is 24-bit
-integer PCM.
+Slot 7 was omitted from this dated table because it still held its factory IR at the time.
+The 2026-08-29 migration subsequently replaced it with `7HIWATT412`; this table remains the
+measurement record for the other nineteen selected source files. Every listed file is
+24-bit integer PCM.
 
 Of the 19, seven match the vendor spec **on channel count, sample rate and bit depth** —
 slots 6, 10, 13, 14, 17, 19, 20. None matches on length; the closest is slot 19 at 2048
@@ -239,26 +246,29 @@ channel the pedal keeps, or whether it sums them. If a slot sounds thin,
 phasey, or quieter than its neighbours, check this table first — a stereo source is the
 prime suspect, and converting it to 44.1 kHz 24-bit mono before installing is the fix.
 
-Because the truncation point is roughly 30 ms, prefer IRs whose useful energy is early.
-Most of a guitar cabinet's character lives in the first 20–50 ms, which is why the heavily
-truncated ML Best IR still sounds right. **Slot 8 is the most exposed file in the map**:
-at 66150 frames it is the longest by a wide margin, 1500 ms, of which roughly 2 % can be
-stored — and it is also stereo, and it is the CAB for Hana P02. If P02 sounds wrong, that
-is the first thing to change.
+Because the observed staging path keeps only the first 2048 samples, prefer IRs whose useful
+energy is early. Most of a guitar cabinet's character lives in the first 20–50 ms, which is
+why heavily shortened IRs can still work. **Slot 8 is the most exposed file in the map**:
+at 66150 frames it is the longest by a wide margin, 1500 ms, of which only about 3 % enters
+the staging record — and it is also stereo, and it is the CAB for Hana P02. If P02 sounds
+wrong, that is the first thing to change.
 
-## Slot reservations
+## Slot replacement decision
 
-`P41 Wonderwall Live` is protected, and it references slots by number, not by file. Its
-92-byte flash image, read on 2026-08-28, has AMP model byte `0x00` (**amp slot 1**,
-`1J900_CL`) and CAB model byte `0x06` (**IR slot 7**, `7VOX_AC30`). Those two slots keep
-their factory contents so that P41 keeps its sound. Everything else is replaced.
+The owner explicitly retired the old P41 sound on 2026-08-29, so no AMP/CAB slot remains
+reserved for it. AMP slot 1 is now Friedman BE100 C45 (`1BE100_C45`) and CAB slot 7 is a
+Hiwatt 4x12 (`7HIWATT412`). All 20 AMP and all 20 CAB slots now belong to the new library.
+P01–P12 were rewritten against that map. P13–P80 retain their pre-migration numeric slot
+references, so their sounds changed with the shared slots and must be treated as unverified
+until intentionally rewritten or auditioned.
 
 ### Slot exposure: what a slot write actually changes
 
 Replacing a slot silently changes every preset that points at it. This audit was the
 precondition for the first slot write, and it is now **done**: all 80 presets were read
 from flash on 2026-08-28 with `blackboxctl device preset N`, read-only, without loading
-any of them.
+any of them. **This section is a pre-migration snapshot:** the names and references in the
+two tables below are the **2026-08-28 state**, not the current AMP/CAB name tables.
 
 The headline result is that **P06–P40 are not empty.** They are fully populated factory
 presets, every one of them pointing at an amp slot and an IR slot. The planned map
@@ -268,7 +278,7 @@ replaces amp slots 2–20 and IR slots 2–6 and 8–20, which repoints most of 
 volume 85. They also settle the preset count — flash indices 0–79 answer and index 80 is
 refused, so **80 presets is confirmed**, not assumed.
 
-Amp slot demand across P01–P41:
+Pre-migration amp-slot demand across P01–P41:
 
 | Amp slot | Factory name | Presets pointing at it |
 | ---: | --- | --- |
@@ -293,11 +303,11 @@ Amp slot demand across P01–P41:
 | 19 | `DgXu_BS` | P39 |
 | 20 | `MarkLm_BS` | **none** |
 
-IR slot demand across P01–P41:
+Pre-migration IR-slot demand across P01–P41:
 
 | IR slot | Factory name | Presets pointing at it |
 | ---: | --- | --- |
-| 1 | now `ML_BEST_IR` | P09 P25 — plus every unused default P42–P80 |
+| 1 | `ML_BEST_IR` (already replaced on 2026-08-28) | P09 P25 — plus every unused default P42–P80 |
 | 2 | `JVM_1960_57` | P04 P05 P08 P21 P22 P23 P24 |
 | 3 | `V30_MD421` | P27 |
 | 4 | `G12-EVH_CT` | P20 P35 |
@@ -318,35 +328,34 @@ IR slot demand across P01–P41:
 | 19 | `MbSway210` | **none** |
 | 20 | `Tace412` | **none** |
 
-Consequences worth deciding on before writing anything:
+Historical consequences established before the 2026-08-29 replacement:
 
 - **Free slots.** Amp slots 7 and 20, and IR slots 14, 19 and 20, are referenced by no
   preset in P01–P41. They are the only slots that can be replaced with zero side effects,
   and the natural place to start.
-- **IR slot 7 has four dependents, not one.** It is reserved for P41, but P02, P13 and P14
-  point at it too. Reserving it protects all four.
+- **IR slot 7 had four dependents, not one.** P02, P13, P14 and P41 all pointed at it;
+  after the approved replacement, all four therefore changed until rewritten.
 - **Amp slots 16–20 are bass amps** (`_BS`), used only by P37–P40, which are the factory
   bass presets. For a guitarist those five slots are the cheapest to give up — but doing so
   does change P37–P40.
 - **The busiest slots are IR 2 (seven presets) and amp 4 (six presets).** Replacing those
   has the widest blast radius.
-- P01–P05 are being rewritten anyway, so their exposure is harmless.
+- P01–P12 were subsequently rewritten, so their temporary exposure was accepted.
 
-If preserving the factory presets matters, the honest options are: replace only the five
-free slots; or accept that P06–P40 change and treat them as expendable, which is consistent
-with the decision to abandon the factory presets in the first place. That is a call for the
-owner, not something to assume.
+Before migration, the preservation choices were to replace only the five free slots or to
+accept that P06–P40 would change. The owner chose the latter, retired the factory bank, and
+the 2026-08-29 migration replaced all 40 shared slots after the 80-preset backup.
 
 ## Amp slot map (20)
 
 File names below are **abbreviated stems**. The real files carry longer suffixes
 (`_AuditionX`, `_A+`, and so on) and the extension case is inconsistent on disk.
-`python -m blackboxctl library diff` resolves stems to real files by prefix and is the
-authority; it currently reports `ok=38 reserved=2` against this file.
+`python -m blackboxctl library diff` resolves stems to real files by prefix. The applied
+40-entry authority is now [`device-library.json`](device-library.json).
 
 | Slot | File | Role |
 | --- | --- | --- |
-| 1 | *(reserved)* `1J900_CL` factory | P41 Wonderwall Live |
+| 1 | `101_OD_Friedman BE100 C45 SAT_100K Epochs_use_Friedman_IR` | Friedman BE100 C45, general lead |
 | 2 | `014B_Clean_Fender_65_Deluxe_Reverb_use_Fender IR` | Fender clean, P01 |
 | 3 | `013_Clean_Fender_Twin_Rev_AuditionX_A+` | bigger Fender clean |
 | 4 | `016B_Clean_Fender_Princeton_1962_Chris_Stapleton_Edition_V7_T8` | small-box clean |
@@ -386,13 +395,13 @@ Every short name below fits.
 
 | Slot | Device name | File | Role |
 | --- | --- | --- | --- |
-| 1 | `1ML_BEST_IR` **written** | `01A_ML Sound Lab's BEST IR IN THE WORLD_Use_This_IR_as_Main_Default` | default IR for everything |
+| 1 | `1ML_BEST_IR` | `01A_ML Sound Lab's BEST IR IN THE WORLD_Use_This_IR_as_Main_Default` | default IR for everything |
 | 2 | `2GTRHACK45` | `01B_GuitarHack JJ CENTRE45 0_High` | brighter general IR |
 | 3 | `3RKS_CUSTOM` | `01C_Rocksta Reactions Custom Cab NT1-A A -2 1 5_Low_High_Heavy` | heavy general IR |
 | 4 | `4FD_TWIN57` | `02A_Fender 1 Twin Reverb SM57 A 2 3 3 45_Rocksta` | Fender Twin |
 | 5 | `5FD_DLX_C12K` | `02F_Fender 6 1966 Deluxe Reverb 1x12 Jensen C12K - SM57 - Cap Edge` | Fender Deluxe, P01 |
 | 6 | `6FD_PRINCE` | `02C_Fender 3 1964 Princeton Amp_Jensen P10R-SM57` | Fender Princeton |
-| 7 | *(reserved)* `7VOX_AC30` | factory IR, do not replace | P41 Wonderwall Live |
+| 7 | `7HIWATT412` | `29_Hiwatt Maxwatt M412 SM57 1` | broad clean/crunch 4x12 |
 | 8 | `8VOX_AC30_TB` | `04D_Vox 4 AC30 1966 Top Boost - e906 - Tone junkie` | AC30 Top Boost, P02 |
 | 9 | `9VOX_AC15` | `04A_Vox 1 AC15C1 SM57 1` | AC15 |
 | 10 | `10VOX_BLUE` | `04E_Vox 5 AC30 WT Blue 2x12 160+SM57 EQ` | AC30 Blue |
@@ -410,27 +419,41 @@ Every short name below fits.
 Slot 15's file name is abbreviated; on disk it is
 `07A_Celestion_V30 2x12 Ball 0.0in 0in_High_Quality For_Mesa_Orange_Diezel_Soldano_BlackStar.wav`.
 
-Factory contents being replaced, for reference if a restore is ever needed. Nineteen of
+Factory contents that were replaced, for reference if a restore is ever needed. Nineteen of
 these twenty were read straight out of the pedal's flash over USB MIDI SysEx on 2026-08-28
 (see [device-validation.md](../docs/reverse-engineering/device-validation.md) STEP 4), so
 those nineteen names are the device's own rather than an inference from filenames. **Slot 1
-is the exception:** flash now returns `1ML_BEST_IR` there, because this project overwrote
-it. `1AC-SeVin` is recorded from the pre-write GUI state and from the file still present in
-`cabFile`.
+is the exception:** the final 2026-08-29 name read returns `1ML_BEST_IR` there, because this
+project overwrote it. `1AC-SeVin` is recorded from the pre-write GUI state and from the file
+present in `cabFile` at the time of the library audit.
 
 `1AC-SeVin`, `2JVM_1960_57`, `3V30_MD421`, `4G12-EVH_CT`, `5HIFI_OK`, `6WANGS212_ECM`,
 `7VOX_AC30`, `8FRMAN112`, `9MeOSick-III`, then `10SoldSC412`, `11FD_TW1980`, `12MESA_412`,
 `13HIW412SWF`, `14Recto_112`, `15JC120_BOX`, `16Agula410`, `17AgSVT410`, `18DgDG212N`,
 `19MbSway210`, `20Tace412`.
 
-All twenty are still present as files in `cabFile`, so any slot can be put back — but two
-of them are stored with a **trailing space before the extension**: `17AgSVT410 .wav` and
-`20Tace412 .wav`. An exact-name lookup written from the list above will miss those two.
+As verified on 2026-08-29, all twenty remained as files in `cabFile`, so their source files
+were available for a later official restore or deliberate re-upload. Two are stored with a
+**trailing space before the extension**: `17AgSVT410 .wav` and `20Tace412 .wav`. An
+exact-name lookup written from the list above will miss those two.
 
-## How to write one slot in M-EFCS
+## How to write one slot
 
-Writing still has to go through the GUI. `blackboxctl` cannot write and is not intended
-to. Confirmed by writing IR slot 1; the same dialog is used in the AMP tab.
+`blackboxctl` now writes AMP and CAB slots directly; M-EFCS clicking is no longer needed.
+Every command is a dry run until `--yes` is supplied:
+
+```sh
+blackboxctl device amp save 1 path/to/capture.am2Data --name 1BE100_C45 --yes
+blackboxctl device cab save 7 path/to/ir.wav --name 7HIWATT412 --level 50 --yes
+blackboxctl device library-apply presets/device-library.json --yes
+```
+
+The batch command validates every source before opening MIDI, commits one slot at a time,
+verifies the stored name, journals every result, and resumes only from a journaled,
+verified save with the same source hash and a still-matching persistent name. The full
+manifest is [`device-library.json`](device-library.json).
+
+For reference, the old GUI process was:
 
 1. Open the `CAB` tab for IRs or the `AMP` tab for captures.
 2. Type a distinctive part of the filename in `Search`. The match is a fuzzy subsequence
@@ -450,15 +473,18 @@ to. Confirmed by writing IR slot 1; the same dialog is used in the AMP tab.
 
 ## Device write log
 
-Exactly one **amp or IR** slot has ever been written on this pedal. Five *preset* slots
-were also written earlier through the same GUI — P01-P03 on 2026-07-20 and P04-P05 on
-2026-07-26, both from built-in amp models — and those are recorded in
-[hana.md](hana.md) and [boulevard-of-broken-dreams.md](boulevard-of-broken-dreams.md), not
-here.
+All 20 AMP and all 20 CAB names now match `device-library.json`. Five presets were
+written earlier through the GUI — P01-P03 on 2026-07-20 and P04-P05 on 2026-07-26 — and
+remain recorded in [hana.md](hana.md) and
+[boulevard-of-broken-dreams.md](boulevard-of-broken-dreams.md).
 
 | Date | Target | Result |
 | --- | --- | --- |
 | 2026-08-28 | IR slot 1: `1AC-SeVin` to `1ML_BEST_IR` | passed |
+| 2026-08-29 | AMP slot 20: factory to `20AC_PREAMP`, CLI protocol proof | exact ACKs + name passed |
+| 2026-08-29 | CAB slot 20: factory to `20AC_TAYLOR`, CLI protocol proof | exact ACKs + name passed |
+| 2026-08-29 | Full 40-entry library manifest | 37 saved, 3 matching-name skips; all 40 names passed |
+| 2026-08-29 | P01–P12 core bank | all twelve 92-byte flash reads matched their rendered images |
 
 Evidence, two independent readings:
 
@@ -467,26 +493,17 @@ Evidence, two independent readings:
   and slot 1 came back `1ML_BEST_IR`
   ([device-validation.md](../docs/reverse-engineering/device-validation.md) STEP 4).
 
-That same flash read is also the evidence for what has **not** happened: IR slots 2–20 and
-all 20 amp slots came back with their factory names (STEP 4 and STEP 5).
+The definitive 2026-08-29 result is the live `device names` read plus the mode-0600
+journal at
+`~/.local/share/blackboxctl/journal/library-apply-20260829-123820.json`. AMP weights and
+CAB waveforms have no known read-back path, so name verification is not a listening test.
 
-**Still pending:** IR slots 2–6 and 8–20, amp slots 2–20, and the capture-based versions of
-presets P01–P05. No preset has been written since the July built-in-model session, so
-P01–P05 still hold those July values; nothing capture-based exists on the device yet.
+## Remaining steps, in order
 
-## Next steps, in order
-
-1. **Read-only audit.** Reconnect the pedal and run `device preset N` for N = 1..41.
-   Record each preset's amp and CAB model bytes. This gives the slot-to-preset reference
-   table needed before any slot write, and it fills in P02, P04 and P05, whose current
-   contents are unrecorded.
-2. **Move the library backup** out of the temp directory.
-3. **Write the IR slots** — 2–6 and 8–20 — through the GUI, in short batches, verifying
-   with `device names` after each batch.
-4. **Write the amp slots** — 2–20 — the same way.
-5. **Write the presets** P01–P05 from the target values in
-   [hana.md](hana.md) and [boulevard-of-broken-dreams.md](boulevard-of-broken-dreams.md).
-6. **Listening check** against the original tracks at matched loudness.
+1. Audition P01–P12 through the intended guitar/pickup/output path at matched loudness.
+2. Adjust gain/dynamics, AMP EQ, CAB, modulation, delay, reverb, then output volume.
+3. Re-render, save, and re-read any adjusted preset; keep the final 92-byte images and slot
+   map in this repository.
 
 ## Working rules for capture-based presets
 
@@ -520,16 +537,20 @@ P01–P05 still hold those July values; nothing capture-based exists on the devi
 - There is no BPM entry, so dotted-eighth delay has to be dialled by ear.
 - The `Analog` delay behaves closer to a digital delay. `Dual` and `Dtape` can be pushed
   toward a digital delay with their parameters.
-- Firmware updates run only from a Windows PC via M-UPGRADE.
+- Firmware updates and recovery belong to the official M-UPGRADE workflow, not
+  `blackboxctl`. Platform availability can change; use M-VAVE's current download page and
+  the exact ANNBLACKBOX firmware. See
+  [blackboxctl-recovery.md](../docs/blackboxctl-recovery.md).
 - If a helicopter-like noise appears while the device is connected to the Mac over USB,
   turn the BlackBox Bluetooth off or pair it with a phone. The noise comes from an
   unconnected Bluetooth radio.
-- An IR is stored on the device in a 4096-byte `CAB` record holding 1358 taps of 24-bit
-  PCM, about 30 ms at 44.1 kHz
+- M-EFCS 3.5.2615 staged a user CAB as a 6,164-byte transfer record on 2026-08-29: a 20-byte header plus
+  2,048 samples of 24-bit mono PCM, about 46 ms at 44.1 kHz. Separately, the bundled
+  factory `*_ampCab.bin` files use 4,096-byte CAB records holding 1,358 taps, about 31 ms
   ([capture-format-spec.md](../docs/reverse-engineering/capture-format-spec.md) §7.1).
-  Anything longer has to be shortened somewhere between the `.wav` on disk and that record;
-  which side does it, M-EFCS or the pedal, has not been observed. Treat 30 ms as the useful
-  budget regardless.
+  The firmware exposes no user-slot waveform read-back, so neither factory layout nor
+  staging length proves the final persistent representation. Preserve early IR energy and
+  verify the sound rather than claiming a byte-for-byte payload read-back.
 
 ## Sources
 

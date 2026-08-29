@@ -5,20 +5,22 @@
 - Built-in-model version written to the device 2026-07-26 KST; revised to capture-based
   targets 2026-08-28 KST
 - M-EFCS app: `3.5.2615` (`CFBundleVersion` `3052615`)
-- Connected device label: `BLACKBOX v20`. The pedal is connected.
+- Last observed connection label: `BLACKBOX v20` (2026-08-29). Re-check endpoints before
+  assuming the pedal is still connected.
 - Guitar: HSS Strat-style guitar, bridge humbucker for both presets
-- Protected preset: P41 `Wonderwall Live` — do not modify
+- P41 was retired by the owner on 2026-08-29; it is no longer protected
 - Slot maps and library rules: [library.md](library.md)
 
-## What is on the device right now
+## Recorded device state after the 2026-08-29 migration
 
-**None of the capture-based targets below has been written.** As far as the record goes,
-P04 and P05 still hold the built-in-amp-model values written on 2026-07-26 and recorded
-under [Written on 2026-07-26](#written-on-2026-07-26--built-in-amp-model-version-superseded-as-a-target).
+The capture-based P04 and P05 below were written by `blackboxctl` on 2026-08-29. Each
+92-byte image was built from the pre-write backup, saved to its inactive slot, and read
+back byte-for-byte. The built-in-model section remains as history.
 
-**Both were read out of flash on 2026-08-28**, in the second device session, and the slot
-references match the July record: P04 points at amp slot 1 `1J900_CL` and IR slot 2
-`2JVM_1960_57`; P05 points at amp slot 9 `9J900_DS` and the same IR slot 2.
+The following is **pre-migration evidence**. Both old built-in-model images were read out of
+flash on 2026-08-28, in the second device session, and their slot references matched the
+July record: P04 pointed at amp slot 1 `1J900_CL` and IR slot 2 `2JVM_1960_57`; P05 pointed
+at amp slot 9 `9J900_DS` and the same IR slot 2.
 
 One value does **not** match. The July record says both presets use total volume 85.
 Flash says P04 is 85 but **P05 is 49**. The July note may simply be wrong — it stated a
@@ -32,8 +34,8 @@ python -m blackboxctl device preset 4
 python -m blackboxctl device preset 5
 ```
 
-Note also that both presets point at **IR slot 2**, which is the busiest IR slot on the
-pedal — seven presets depend on it. See
+At that snapshot both presets pointed at **IR slot 2**, then the busiest factory IR slot —
+seven presets depended on it. See
 [library.md](library.md#slot-exposure-what-a-slot-write-actually-changes).
 
 ## Before overwrite
@@ -48,10 +50,10 @@ retained as a backup." The pre-July-2026 contents of P04 and P05 are therefore g
 - P04: `Boulevard Pulse Clean` — intro and verse clean pulse
 - P05: `Boulevard Chorus Crunch` — chorus rhythm
 
-## Target values — capture based, not yet written
+## Target values — capture based, written 2026-08-29
 
-These are the design targets. **Neither is on the device.** They depend on amp slots 13
-and 15 and IR slots 11 and 12, none of which has been written either.
+These are the design targets now stored on the device. They use amp slots 13 and 15 and
+IR slots 11 and 12 from the new library.
 
 Written against the amp and IR slot maps in [library.md](library.md). Both slots use total
 volume `85`.
@@ -89,8 +91,7 @@ raising amp gain.
 
 ## Written on 2026-07-26 — built-in amp model version, superseded as a target
 
-**Superseded as a target; still, on the record, what the pedal holds.** These were written
-through M-EFCS on 2026-07-26 from the
+**Superseded and no longer stored.** These were written through M-EFCS on 2026-07-26 from the
 [design document](../docs/superpowers/specs/2026-07-26-greenday-boulevard-blackbox-presets-design.md)
 and its [plan](../docs/superpowers/plans/2026-07-26-greenday-boulevard-blackbox-presets.md),
 both now superseded. The values and the write result below are recovered from commit
@@ -100,9 +101,9 @@ rewrite in `27b2042` and would otherwise have been lost.
 They are no longer the target for P04 and P05. Both were read back from flash on
 2026-08-28: the slot references match, and P05's total volume does not.
 
-Slot references, which matter because those slots are scheduled to be rewritten: P04 uses
-amp slot 1 and IR slot 2; P05 uses amp slot 9 and IR slot 2. IR slot 2 is scheduled to
-become `2GTRHACK45`. Amp slot 1 is reserved for P41 and will not change.
+At the 2026-08-28 snapshot, P04 used amp slot 1 and IR slot 2; P05 used amp slot 9 and IR
+slot 2. The 2026-08-29 migration subsequently replaced those shared slots, retired P41's
+reservation, and rewrote P04/P05 to the capture-based values above.
 
 ### P04 — built-in, as written 2026-07-26
 
@@ -124,7 +125,7 @@ become `2GTRHACK45`. Amp slot 1 is reserved for P41 and will not change.
 
 ## Verification
 
-Built-in-model version, 2026-07-26 — the version that should be on the device:
+Built-in-model version, 2026-07-26 — historical verification before replacement:
 
 - Device write: passed. M-EFCS displayed `Success!` after saving P04 and P05.
 - P04 persistence: passed. After switching to P05 and re-opening P04, every model, visible
@@ -138,22 +139,20 @@ Built-in-model version, 2026-07-26 — the version that should be on the device:
   references match. Total volume does not: P05 reads 49, not the 85 the July note claims.
 - Player listening check: never completed.
 
-Capture-based version — **nothing written**:
+Capture-based version — **written and byte-verified 2026-08-29**:
 
 - Library install: passed. The captures and IRs named above are present in the M-EFCS AMP
   and CAB lists after an app restart, and `python -m blackboxctl library diff` resolves
   every one of them to a file on disk.
-- Read-only inspection of the current P04 and P05: **done** 2026-08-28. Reproduce with
+- Read-only inspection of the pre-migration P04 and P05: **done** 2026-08-28. Reproduce a
+  current read with
   `python -m blackboxctl device preset 4` and `... 5`.
-- Amp and IR slot writes: **not done.** Only IR slot 1 has ever been written on this
-  pedal. Amp slots 13 and 15 and IR slots 11 and 12 still hold their factory contents,
-  confirmed by the 2026-08-28 flash read of both name tables.
-- Preset writes for P04 and P05 in their capture-based form: **not done.**
-- P41 safety: confirmed again on 2026-08-28 by decoding P41 from flash — amp model byte
-  `0x00` (amp slot 1) and CAB model byte `0x06` (IR slot 7), both untouched.
+- Amp and IR slot writes: done; the full 20+20 name tables match
+  [`device-library.json`](device-library.json).
+- Preset writes for P04 and P05: done; every 92-byte read-back matched its rendered image.
 - Player listening check: not done.
 
-### Listening check, still pending from July
+### Listening check, still pending
 
 Play P04 and P05 at matched loudness with the bridge humbucker:
 
@@ -163,5 +162,5 @@ Play P04 and P05 at matched loudness with the bridge humbucker:
 4. If P05 is too saturated, reduce AMP Gain before disabling Boost.
 5. Adjust output Level only after the gain and EQ feel correct.
 
-The pedal is connected, so these steps are unblocked. They need a guitar and a listener,
-not a device command.
+These steps need the guitar, a listener, and a fresh connection check; they are not proved
+by another stored-state read.

@@ -1,0 +1,25 @@
+Licensing
+=========
+
+This repository contains more than one work. They are not all under the
+same licence.
+
+tools/blackboxctl/
+    GNU General Public License v3.0 or later.
+    Full text: tools/blackboxctl/LICENSE
+    Attribution: tools/blackboxctl/NOTICE
+
+docs/reverse-engineering/
+    Creative Commons Attribution-ShareAlike 4.0 International.
+    The protocol documents adapt Joel Victor's mvave-blackbox-ble
+    documentation (CC BY-SA 4.0). Share-alike therefore applies.
+    Full text: LICENSES/CC-BY-SA-4.0.txt
+
+All other original documentation in this repository — including README.md,
+AGENTS.md, CONTRIBUTING.md, SECURITY.md, docs/blackboxctl-*.md, and the
+example preset bank under presets/ — is also licensed under CC BY-SA 4.0
+so the documentation set stays share-alike compatible.
+
+This project is not affiliated with, endorsed by, or supported by M-VAVE,
+CUVAVE, or the makers of M-EFCS. "M-Vave", "BlackBox", and "M-EFCS" are
+marks of their respective owners.

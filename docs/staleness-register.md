@@ -506,7 +506,7 @@ directories under `/private/tmp/claude-501/` that are purged:
 - `M-EFCS-library-before-20260828-041029.tgz` — the only restore point for the 210
   pre-existing IRs and 15 pre-existing captures. `library.md` line 56 gives no path at all,
   only "in the session scratchpad". It is currently at
-  `/private/tmp/claude-501/-Users-mendong-Documents-black-box--claude-worktrees-blackbox-presets-ir-setup-d4cb38/e540b214-9e36-4e96-abd6-017d7cf0c2eb/scratchpad/backup/`,
+  `/private/tmp/claude-501/-Users-OWNER-Documents-black-box--claude-worktrees-blackbox-presets-ir-setup-d4cb38/e540b214-9e36-4e96-abd6-017d7cf0c2eb/scratchpad/backup/`,
   3,525,756 bytes, verified to contain 15 `ampFile`, 210 `cabFile` and 14 `dsFile` entries.
 
 The raw byte logs themselves are safe — they are in `device-validation.md` and in

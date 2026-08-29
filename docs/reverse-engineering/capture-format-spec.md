@@ -1,9 +1,15 @@
 # M-Vave BlackBox — Neural Amp Capture Container Specification (`.am2` / `.am2Data` / `.am3Data`)
 
 **Status:** Derived specification. Every statement is labelled CONFIRMED or HYPOTHESIS.
-**Scope:** The on-disk capture container, the on-device flash record it becomes, the
-neural topology inside it, and the `.wav` impulse-response side of the cab slot.
+**Scope:** The on-disk capture container, bundled factory-content records, the neural
+topology inside them, and the `.wav` input plus observed staging format for user CAB uploads.
+The final persistent user-slot waveform layout is not readable and is not claimed here.
 **Audience:** the BlackBox CLI, so it can *inspect, validate and rename* captures safely.
+
+> **Snapshot boundary:** this derivation records container, bundled factory-blob, and
+> transfer evidence collected through 2026-08-29. It is not the current CLI support matrix.
+> Use [`tools/blackboxctl/STATUS.md`](../../tools/blackboxctl/STATUS.md) for implemented and
+> hardware-verified behavior.
 
 ---
 
@@ -14,7 +20,7 @@ neural topology inside it, and the `.wav` impulse-response side of the cab slot.
 | [`am2manager`](https://github.com/walterwanderley/am2manager) — `am2.go`, `cmd/am2converter`, `cmd/am2protector` | Walter Wanderley | Apache-2.0 | Origin of the 60-byte-header / 6144-byte-payload split and the `Mix`/`Level`/`GainMax`/`GainMin` field names. |
 | [`mvave-blackbox-ble`](https://github.com/jvsobrinho/mvave-blackbox-ble) — `docs/memory_map.md` | Joel Victor | **CC BY-SA 4.0** | Flash layout, amp/cab name blocks, the `.am4` mention corrected below. |
 | `/Applications/M-EFCS.app/Contents/Frameworks/libamx_parser.dylib` | M-Vave / Zhuhai Shengke | proprietary | Static disassembly (`objdump`, `nm`) established the neural topology and the exact weight offsets. Inspected read-only; no debugger was attached and no code was copied. |
-| `.../App.framework/.../lib/resources/bin/blackbox/*_ampCab.bin` | M-Vave | proprietary | Factory amp/cab blobs; read-only. Used to establish the flash record layout. |
+| `.../App.framework/.../lib/resources/bin/blackbox/*_ampCab.bin` | M-Vave | proprietary | Factory amp/cab blobs; read-only. Used to establish the bundled factory-content layout. |
 
 Because this document builds on CC BY-SA 4.0 documentation, **this file is licensed
 CC BY-SA 4.0**. Attribution: *based on protocol research by Joel Victor,
@@ -92,10 +98,10 @@ M-EFCS library, both of which still exist at their own locations.
 | :--- | ---: | :--- | :--- |
 | `.am2` | 6144 | payload only, no header | CONFIRMED |
 | `.am2Data` / `.am2data` / `.am3Data` | 6204 | 60-byte header + payload | CONFIRMED |
-| flash / factory amp record | 6204 | identical bytes, padded into an 8192-byte slot | CONFIRMED |
-| flash record after DSP init | 6272 | 6204 + `LMT\0` + 16 `float32` appended at runtime | CONFIRMED |
-| `AM4` record | 7868 | 60-byte header + 1952 `float32` | CONFIRMED |
-| `AM4` record after DSP init | 7936 | 7868 + `LMT\0` + 16 `float32` | CONFIRMED |
+| AM2/AM3 base and bundled factory amp record | 6204 | identical bytes, padded in the factory blob | CONFIRMED |
+| prepared AM2/AM3 upload record | 6272 | 6204 + `LMT\0` + 16 `float32` appended at runtime | CONFIRMED from transfer capture |
+| `AM4` base record | 7868 | 60-byte header + 1952 `float32` | CONFIRMED |
+| bundled AM4 factory record | 7936 | 7868 + `LMT\0` + 16 `float32` | CONFIRMED in factory blob |
 
 **CONFIRMED — `.am2` is a headerless `.am2Data`.** SHA-256 of the 6144-byte body of every
 6204-byte file was compared against SHA-256 of every 6144-byte file. **23 payloads occur
@@ -454,7 +460,7 @@ experiment plus a level match.
 
 ---
 
-## 7. Flash and factory-blob layout (context for the CLI)
+## 7. Bundled factory amp/CAB blob layout (context for the CLI)
 
 CONFIRMED from `…/lib/resources/bin/blackbox/*_ampCab.bin`, each 245760 bytes:
 
@@ -477,7 +483,7 @@ parses correctly as a 6204-byte AM2 record. CONFIRMED.
 
 This corroborates `memory_map.md`'s "20 amp names / 20 cab names" name blocks.
 
-### 7.1 The `CAB` record — on-device IR format
+### 7.1 The `CAB` record in bundled factory-content blobs
 
 CONFIRMED, from `blackbox_*_ampCab.bin` slots 20–29:
 
@@ -498,29 +504,29 @@ roughness 1.30, tail RMS 0.549). The `blackbox_am3_ampCab.bin` cabs are palindro
 each 3-byte group (byte 0 == byte 2 for 1358/1358 samples), i.e. they were up-converted
 from 16-bit sources by bit replication, and decode identically either way.
 
-**1358 taps at 44.1 kHz = 30.8 ms.** That is the entire IR budget of the pedal.
+**1358 taps at 44.1 kHz = 30.8 ms.** That is the capacity of this 4096-byte
+factory-blob record. It was measured from files bundled with M-EFCS, not by reading a user
+CAB slot back from the pedal.
 
 ### Three IR length figures, reconciled
 
 Three numbers circulate in this project — 1024, 1358 and 2048 — and each was at some point
-labelled confirmed, which read as a contradiction. It is not one. They measure three
-different things:
+labelled confirmed, which read as a contradiction. The 2026-08-29 transfer capture showed
+that they describe different artifacts:
 
 | Figure | What it actually is | Where |
 | ---: | :--- | :--- |
 | **1024** taps / 23.2 ms | The **vendor specification line**, from the Korean manual and the product copy. It is intent, not contract: the vendor's own factory content does not meet it. | `official-docs.md` §3 |
-| **1358** taps / 30.8 ms | What an **on-device `CAB` flash record physically holds**. This is the real ceiling and the figure a validator should warn against. | this section |
-| **2048** frames | The length of most **factory source `.wav` files** in the Mac-side M-EFCS library. Those are inputs to the upload path, not device storage. Measured across all twenty: sixteen are 2048 frames; 1AC-SeVin is 10000, 5HIFI_OK is 22026, 15JC120_BOX is 13230 and 10SoldSC412 is 1020. | `presets/library.md` |
+| **1358** taps / 30.8 ms | What one **4096-byte `CAB` record in the bundled factory `*_ampCab.bin` blobs** holds. It is not a live user-slot read-back. | this section |
+| **2048** samples / 46.4 ms | What M-EFCS 3.5.2615 staged for a user CAB upload: 20-byte header + 6144 bytes of signed 24-bit mono PCM, captured byte-for-byte on 2026-08-29. | `tools/blackboxctl/STATUS.md` and the captured transfer |
+| **2048** source frames | Also the independent length of most **factory source `.wav` files** in the Mac-side M-EFCS library. Those are upload inputs, not storage evidence. | `presets/library.md` |
 
-**The on-device figure outranks the others**, because it is the one that determines what
-survives. Wherever a threshold is quoted it should be 1358 taps / 30.8 ms, and it should
-name the vendor's 1024 alongside so a reader who has seen the spec line is not left
-wondering. `tools/blackboxctl/blackboxctl/captures.py` currently hard-codes `IR_TAPS = 1024`
-and warns from 23.2 ms, with a comment noting that 1024 is a documented figure rather than a
-validation requirement; that is a defensible conservative choice, but the code and §8.2 below
-warn at different thresholds derived from different sources, and they should be made to
-quote the same number and name the other. **Reported, not changed** — no code was modified,
-per the workspace rules in `AGENTS.md`.
+The final persistent user-slot representation is **not known** because the firmware exposes
+no waveform read-back command. A validator may accurately say that M-EFCS stages 2048
+samples and that the bundled factory blobs use 1358-sample records; it must not turn either
+measurement into a proven live-slot retention ceiling. `blackboxctl` follows the observed
+2048-sample staging transfer and reports longer source material as truncated for that
+transfer.
 
 ---
 
@@ -529,7 +535,7 @@ per the workspace rules in `AGENTS.md`.
 ### 8.1 What is demonstrably in the user's library
 
 CONFIRMED by parsing all 293 files in
-`/Users/mendong/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS/cabFile`
+`~/Library/Containers/com.digAmp.dgAmp/Data/Documents/M-EFCS/cabFile`
 (RIFF chunk walk, `fmt ` and `data` chunks):
 
 | Property | Observed |
@@ -573,33 +579,34 @@ document defers to it.
 
 Ranked by how likely the user is to be surprised:
 
-1. **Length.** The device stores **1358 taps at 44.1 kHz (30.8 ms)** — §7.1, measured from
-   the on-device record. 285 of the 293 IRs in the library are longer than that and are
-   necessarily truncated on import. Warn above 30.8 ms; warn loudly above ~100 ms, where a
-   reverb tail is clearly being discarded. When reporting this to a user, name the vendor's
-   published figure too — 1024 taps / 23.2 ms — and say which is which, or the two numbers
-   look like a contradiction. See the reconciliation table in §7.1.
+1. **Length.** The observed M-EFCS 3.5.2615 path stages **2048 samples at 44.1 kHz
+   (46.4 ms)** for a user upload, so source material beyond that point is definitely omitted from the observed
+   transfer. The bundled factory blobs instead use 1358-sample records (30.8 ms), while the
+   vendor publishes 1024 (23.2 ms). Warn above the 2048-sample staging budget and name the
+   other two figures as measurements of different artifacts. Do not claim a final user-slot
+   ceiling until waveform read-back exists.
 2. **Sample rate ≠ 44100.** The DSP runs at 44.1 kHz (CONFIRMED from the 44100-iteration
    sweep in `calc_bias_gru`). 48 kHz and 96 kHz files must be resampled by the host; a
    1024-tap 48 kHz IR becomes ~941 taps at 44.1 kHz. Warn, and state the resampled length.
    Warn, but do not refuse: **five of the pedal's own twenty factory IRs are not 44.1 kHz** —
    3V30_MD421, 4G12-EVH_CT and 11FD_TW1980 at 48 kHz, 8FRMAN112 and 14Recto_112 at 96 kHz —
    so the vendor does not hold its own content to the published spec line.
-3. **Stereo.** 32 library files are stereo. The cab slot holds one mono channel. Warn that
-   a channel will be dropped or summed, and say which.
-4. **Bit depth other than 24.** The on-device format is 24-bit signed. 16-bit input loses
-   nothing that matters; 32-bit float input can exceed ±1.0 and will clip. Warn if any
+3. **Stereo.** 32 library files are stereo. The observed upload staging record is mono.
+   Warn that a channel will be dropped or summed, and say which.
+4. **Bit depth other than 24.** The observed staging and bundled factory-blob formats are
+   24-bit signed. 16-bit input loses nothing that matters; 32-bit float input can exceed
+   ±1.0 and will clip. Warn if any
    sample of a float file exceeds ±1.0. Determine float-vs-integer from the `fmt ` chunk's
    `wFormatTag` (1 = PCM, 3 = IEEE float), **not** from bit depth alone: Python's `wave`
    module reports `sampwidth == 4` for both and cannot tell them apart. The single IEEE-float
    file in this library is the factory `10SoldSC412.wav` (tag 3, 32-bit, 1020 frames); the
    single 32-bit *integer* file is the factory `7VOX_AC30.wav` (tag 1, 32-bit, 2048 frames).
    Those two have been confused elsewhere in this repository for exactly this reason.
-5. **Non-normalised peak.** The device format is fixed-point with hard headroom at ±2²³.
+5. **Non-normalised peak.** The observed 24-bit staging format has hard headroom at ±2²³.
    Warn if the peak is below −20 dBFS (the IR will be too quiet after truncation) or at
    exactly 0 dBFS with more than a handful of samples at full scale (already clipped).
-6. **Leading silence.** A long pre-delay eats the 1358-tap budget. Warn if the peak sample
-   is more than ~64 samples into the file.
+6. **Leading silence.** A long pre-delay eats the 2048-sample staging budget. Warn if the
+   peak sample is more than ~64 samples into the file.
 7. **Exotic containers.** Reject RF64 and `WAVE_FORMAT_EXTENSIBLE` with a non-PCM
    sub-format rather than guessing; none appear in the library, so there is no evidence the
    importer handles them.

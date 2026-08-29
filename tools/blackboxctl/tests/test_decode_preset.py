@@ -11,9 +11,9 @@ these tests fail loudly if that regresses.
 from __future__ import annotations
 
 import pytest
+from fixtures import device_frames as fx
 
 from blackboxctl import protocol
-from fixtures import device_frames as fx
 
 
 def decode(reply: bytes):
@@ -40,7 +40,12 @@ def test_amp_knobs_are_the_same_five_for_every_capture_slot(model_index):
     image[amp.model_addr] = model_index
     preset = protocol.decode_preset(bytes(image), fx.AMP_NAMES, fx.CAB_NAMES)
     assert [n for n, _ in knobs(preset, "amp")] == [
-        "Gain", "Level", "Bass", "Mid", "Treble"]
+        "Gain",
+        "Level",
+        "Bass",
+        "Mid",
+        "Treble",
+    ]
     # The values must be the raw bytes, not a fallback.
     assert knobs(preset, "amp") == fx.EXPECTED_P41["amp_knobs"]
 
@@ -132,10 +137,12 @@ def test_cab_display_mappings_are_reachable_from_a_real_preset():
     """These were dead code while the CAB knob lookup was broken."""
     preset = decode(fx.REPLY_FLASH_40)
     values = dict(knobs(preset, "cab"))
-    assert protocol.format_knob_value("cab", "Low Cut", values["Low Cut"]) \
-        == "26 (93 Hz)"
+    assert (
+        protocol.format_knob_value("cab", "Low Cut", values["Low Cut"]) == "26 (93 Hz)"
+    )
     assert "18.0 kHz" in protocol.format_knob_value(
-        "cab", "High Cut", values["High Cut"])
+        "cab", "High Cut", values["High Cut"]
+    )
 
 
 # --- Name tables ----------------------------------------------------------
@@ -152,8 +159,10 @@ def test_name_tables_decode_to_the_forty_recorded_names():
 def test_the_trailing_checksum_never_becomes_a_phantom_21st_name():
     """AMP's checksum byte is 0x36 = '6'; a naive null-split yields 21 names."""
     assert fx.REPLY_AMP_NAMES[-1] == 0x36
-    assert len(protocol.parse_name_table(
-        protocol.parse_frame(fx.REPLY_AMP_NAMES).payload)) == 20
+    assert (
+        len(protocol.parse_name_table(protocol.parse_frame(fx.REPLY_AMP_NAMES).payload))
+        == 20
+    )
 
 
 def test_a_truncated_name_table_raises_instead_of_under_reporting():

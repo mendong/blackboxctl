@@ -511,10 +511,7 @@ assuming the inventory is complete.
    reading `NOTICE` alone could reasonably go looking for BlackBox byte formats there.
 8. **`NOTICE`'s Apache-2.0 sentence slightly overstates the obligation** (section 3.4).
 9. **The trademark owner is recorded two incompatible ways** (section 7).
-10. ~~**`tools/blackboxctl/README.md` says "212 tests"**~~ **CLOSED.** The suite was run:
-    `python -m pytest` reports `221 passed` (Python 3.14.3, pytest 9.1.1, 2026-08-28), so
-    221 was right and 212 was stale. `tools/blackboxctl/README.md`,
-    `tools/blackboxctl/STATUS.md` and the root `README.md` now agree. Two details of this
-    entry as first written were also wrong: `AGENTS.md` never gave a test count at all, and
-    the figure `STATUS.md` quoted came from the untracked `.pytest_cache`, not from a run.
+10. ~~**`tools/blackboxctl/README.md` says "212 tests"**~~ **CLOSED as a 2026-08-28
+    snapshot.** That day's suite reported `221 passed`. The living test-count
+    authority is `tools/blackboxctl/STATUS.md`; do not treat 212 or 221 as current.
     See contradiction-register C24 and staleness-register B5.

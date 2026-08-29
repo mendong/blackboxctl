@@ -1,12 +1,14 @@
 # blackboxctl
 
 A command line tool for the M-Vave BlackBox guitar amp modeller and the M-EFCS
-file library on macOS. It reads the pedal over USB MIDI SysEx, decodes its
-presets and slot names, and manages the capture and IR files that M-EFCS scans.
+file library on macOS. It reads and writes the pedal over USB MIDI SysEx,
+decodes presets and slot names, converts IRs, prepares AMP records, and manages
+the capture and IR files that M-EFCS scans.
 
-**Device access is read only.** There is no command in this tool that transmits
-a state-changing frame to the pedal, and no flag that enables one. See
-[Safety model](#safety-model).
+All state-changing device commands are dry runs unless `--yes` is supplied.
+Preset writes preserve exact rollback bytes; AMP/CAB writes require ACKs and
+verify the permanent slot name. A lost final commit ACK must be reconciled by a
+changed persistent name or is reported as uncertain. See [Safety model](#safety-model).
 
 This tool is one of four parts of a larger workspace. The repository entry point is
 [`../../README.md`](../../README.md); the protocol it implements is documented in
@@ -14,10 +16,12 @@ This tool is one of four parts of a larger workspace. The repository entry point
 [STATUS.md](STATUS.md) is what to believe about this tool specifically.
 
 ```
-python -m blackboxctl selftest          # offline; touches nothing
+python -m blackboxctl doctor            # protocol, MIDI, and M-EFCS readiness
 python -m blackboxctl device names      # read the 20 amp and 20 IR slot names
 python -m blackboxctl device dump       # read and decode the live preset
+python -m blackboxctl backup extract-all backup.json ./presets
 python -m blackboxctl library diff      # compare presets/library.md to disk
+python -m blackboxctl device library-apply ../../presets/device-library.json
 ```
 
 ## License and attribution
@@ -41,28 +45,34 @@ documentation is CC BY-SA 4.0, and those licences require it.
 
 ## Install
 
-No dependencies beyond the standard library. macOS only for the `device`
-commands; everything else is portable.
+No third-party Python packages are required. The `device` commands are macOS-only;
+preparing a new AMP record additionally calls the installed M-EFCS
+`libamx_parser.dylib`. Other non-device commands are portable.
 
 ```sh
 cd tools/blackboxctl
 python -m blackboxctl --help            # run in place
-pip install -e .                        # or install the console script
+pip install -e ".[dev]"                 # console script plus pytest/ruff
 ```
 
-`requires-python` is **>= 3.10** (declared in `pyproject.toml` only). Use `pip
-install -e .`, not a plain `pip install .`: `library diff` locates
-`presets/library.md` by walking up from its own file, so a non-editable install
-puts it outside the repository and the command fails.
+`requires-python` is **>= 3.10**. `library diff` first looks for
+`presets/library.md` next to this checkout, then walks up from the current
+working directory, so an editable install and a clone both work. A wheel
+install still needs that document nearby or `--doc PATH`.
 
 ## What it does
 
-### `selftest`
+### `selftest` and `doctor`
 
-Offline verification of the codec, the seven read-command literals, and the
-read-only gate. Touches no hardware and no files. Run it first.
+`selftest` is the offline protocol check: codec, the seven read-command
+literals, and the read-only gate. Touches no hardware and no files.
 
-### `device …` — read only
+`doctor` runs that check and then reports Python, MIDI transport, whether a
+BlackBox source/destination pair is ready, the M-EFCS AMP helper dylib, and
+the on-disk library root. It writes nothing. `--require-device` exits 3 when
+no pedal is ready — useful in scripts.
+
+### `device …`
 
 | Command | What it reads |
 | :--- | :--- |
@@ -71,6 +81,14 @@ read-only gate. Touches no hardware and no files. Run it first.
 | `device dump` | the live, currently sounding 92-byte preset, decoded |
 | `device names` | the 20 amp capture names and 20 IR names (280 bytes each) |
 | `device preset N` | stored preset `PNN` from flash, decoded, **without loading it** |
+| `device backup` | checksummed backup of all 80 raw preset images and both name tables |
+| `backup extract-all` | write P01.bin..P80.bin from that JSON backup |
+| `device load N --yes` | load a stored preset into live RAM |
+| `device audition IMAGE --yes` | apply a 92-byte image to RAM without saving |
+| `device save N IMAGE --yes` | save and read back an inactive preset, with rollback |
+| `device amp audition/save` | prepare and upload an AMP capture without the GUI |
+| `device cab audition/save` | convert and upload a WAV IR without the GUI |
+| `device library-apply MANIFEST --yes` | resumable, per-slot verified AMP/CAB batch |
 
 Endpoints are resolved by `kMIDIPropertyManufacturer == "Jieli Technology"`,
 never by an integer ref — refs change across replug.
@@ -111,37 +129,35 @@ accidents:
 
 ## Safety model
 
-In one paragraph: every frame that reaches CoreMIDI passes
-`protocol.assert_read_only`, which accepts only the `00 59 23` read header with
-an empty payload, a size of at most 280 bytes, a valid checksum, and an address
-inside one of the five regions that have actually been read from this pedal —
-the flash preset array, live RAM, the current-preset register and the two name
-tables. The two documented write triggers (`0xE0000000` load-preset,
-`0xF0000000` commit) are excluded even for reads, because the firmware's
-behaviour on a read at a trigger register is untested. Building a write frame
-requires a `protocol.WriteConsent` capability object naming a specific
-`WRITE_PATHS` key, with `confirmed_by_user` and `accept_unverified` set, plus
-`allow_flash` for anything touching the preset array; `BlackBox.send` then
-re-checks the wire bytes independently of whoever built them and refuses any
-write path whose `hardware_confirmed` is False. **Every write path is currently
-`hardware_confirmed=False`, so no write frame can reach the wire at all** —
-from the CLI, from a script, or from a REPL. `tests/test_no_write_path.py`
-asserts that, including that `cli.py` contains no reference to any write builder.
-File-modifying commands are separately dry-run by default and need `--yes`.
+Read frames still pass a strict address/size/checksum allowlist. A write frame
+requires an explicit per-operation `WriteConsent`; flash paths require an
+additional flash capability, and the transport independently checks the final
+wire bytes. The CLI exposes no generic address writer and no firmware writer.
+
+Every device mutation is dry-run by default. Live edits and preset saves are
+read back byte-for-byte, preset saves keep rollback images, and AMP/CAB saves
+require ACKs plus a matching permanent name-table read. A lost final commit ACK
+is accepted only when a changed persistent name proves the commit. The firmware
+does not expose AMP weights or CAB waveforms for read-back, so their content
+verification ends at source hash + ACK + slot name; listening remains a
+separate required check. `device library-apply` prebuilds all records before
+opening MIDI, stops on the first failure, journals after every slot, and resumes
+only when the same journal records a verified save of the same source hash and
+the persistent name still matches.
 
 Run `python -m blackboxctl write-paths` to see each state-changing command and
-the exact evidence for why it is disabled.
+its dry-run, consent, verification, and recovery safeguards.
 
 ## What is confirmed and what is not
 
 Every claim in this codebase is labelled CONFIRMED (observed on the owner's own
-pedal, serial `4150353439333111`, with the method stated) or HYPOTHESIS. The
+pedal (with the method stated) or HYPOTHESIS. The hardware serial is deliberately
+not retained because it is irrelevant to protocol reproduction. The
 full transcript is
 [`docs/reverse-engineering/device-validation.md`](../../docs/reverse-engineering/device-validation.md).
 See [STATUS.md](STATUS.md) for the current, honest state.
 
-**CONFIRMED on hardware** (one session, 2026-08-28, all seven commands
-read-only):
+**CONFIRMED on hardware** (2026-08-28 through 2026-08-29):
 
 - the Base-128 codec, the frame layout `magic(3) | length LE16 | space LE16 |
   address LE32 | size LE24 | payload | checksum`, and the address map;
@@ -151,21 +167,17 @@ read-only):
   M-EFCS GUI all matched the decode;
 - the 20 amp and 20 IR slot names, all 40 read back;
 - inbound checksums sum from **offset 5**, not the published offset 4.
+- all 80 preset slots; indices 0–79 answer and index 80 is refused;
+- reversible live knob/toggle/model/routing/load operations and exact RAM restore;
+- inactive P80 flash save, full read-back, and exact restore;
+- CAB staging/save and AMP staging/save, including large-frame checksum and ACK
+  behavior; all 20 AMP and 20 CAB names were replaced/verified by the CLI.
 
-**HYPOTHESIS**, and honestly so:
-
-- every write path. **No write frame of any kind has ever been transmitted to
-  this pedal.** The RAM write address (`0x10000000 + dump_index`) is
-  high-confidence but read-direction evidence only.
-- `PRESET_COUNT = 80`. Its evidence is a vendor PDF and bbedit, not this pedal;
-  the highest flash index ever read here is 40.
-- whether the device accepts an `am2converter`-written `00 00 32 00` magic, an
-  AM4 record, or a non-24-bit IR. All three are warnings, not refusals,
-  precisely because they are untested.
-
-**UNVERIFIED code**: `transport.py` is a rewrite of the module that produced the
-hardware logs. Its own send path, packet parser and request/response matching
-have never run against the pedal — see STATUS.md.
+**Still bounded or unverified:** AMP runtime generation currently calls the
+installed M-EFCS `libamx_parser.dylib`; a pure-Python replacement is not yet
+implemented. AMP weights and CAB waveform cannot be read back. AM4 loading and
+firmware writing are unsupported. Hard-brick/forced-bootloader recovery is not
+documented by the vendor; see `../../docs/blackboxctl-recovery.md`.
 
 ## Corrections to the upstream documentation
 
@@ -192,13 +204,13 @@ protocol will hit all five:
 ## Tests
 
 ```sh
-python -m pytest        # 221 tests, no hardware required
+pip install -e ".[dev]"
+python -m pytest        # full offline regression suite
 ```
 
-`pytest` is **not** a dependency of this package and is not vendored — install it
-first (`pip install pytest`) or the command above fails on a fresh machine. The
-figure was re-run on 2026-08-28 under Python 3.14.3 with pytest 9.1.1: `221
-passed`. It is the same figure `STATUS.md` reports.
+`pytest` is an optional extra, not a runtime dependency. Treat
+[`STATUS.md`](STATUS.md) as the dated test-result authority and refresh its result after
+changing the suite.
 
 The fixtures are real bytes from the pedal, not synthesised: the seven
 transmitted read commands, the seven unique reply frames, the 340-byte SysEx and
