@@ -5,6 +5,9 @@ CoreMIDI lays it out on arm64 and handed to BlackBox._on_packets. That exercises
 the packet walk, the cross-callback stream reassembly, the real-time filter and
 the SysEx extractor without opening a device.
 
+Synthetic lists use the same ARM/Intel stride as :data:`MIDI_PACKET_ALIGN_4`,
+so the walker is tested against this host's CoreMIDI layout.
+
 This file covers receive mechanics only. The send path, completion wait, and
 endpoint resolution have separate unit tests and were exercised on hardware;
 see STATUS.md for the dated evidence boundary.
@@ -23,13 +26,16 @@ transport = pytest.importorskip("blackboxctl.transport")
 
 
 def packet_list(*chunks: bytes) -> ctypes.Array:
-    """Build a MIDIPacketList: UInt32 numPackets, then packed MIDIPackets.
+    """Build a MIDIPacketList using this host's CoreMIDI packet stride.
 
-    MIDIPacket is timeStamp(8) | length(UInt16) | data[length], and the next
-    packet starts at (&data[length] + 3) & ~3 on arm64.
+    MIDIPacket is timeStamp(8) | length(UInt16) | data[length]. The next packet
+    is 4-byte aligned on ARM and packed on Intel, matching MIDIPacketNext.
     """
-    size = 4 + sum(((10 + len(c) + 3) & ~3) for c in chunks) + 16
-    buf = ctypes.create_string_buffer(size)
+    align4 = transport.MIDI_PACKET_ALIGN_4
+    offset = 4
+    for chunk in chunks:
+        offset = transport._next_packet_offset(offset, len(chunk), align4=align4)
+    buf = ctypes.create_string_buffer(offset + 16)
     ctypes.memmove(buf, len(chunks).to_bytes(4, "little"), 4)
     offset = 4
     for chunk in chunks:
@@ -38,7 +44,7 @@ def packet_list(*chunks: bytes) -> ctypes.Array:
             ctypes.byref(buf, offset + 8), len(chunk).to_bytes(2, "little"), 2
         )
         ctypes.memmove(ctypes.byref(buf, offset + 10), chunk, len(chunk))
-        offset = (offset + 10 + len(chunk) + 3) & ~3
+        offset = transport._next_packet_offset(offset, len(chunk), align4=align4)
     return buf
 
 
