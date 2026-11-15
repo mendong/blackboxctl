@@ -99,6 +99,134 @@ means CC number 0 through 5, sent with value 0.
 - bank select (CC0 is used as the FX toggle, so the device does not follow the MIDI
   bank-select convention)
 
+Reverse engineered MIDI codes for version v21 and above. 
+
+| Type | Message | Value | Description |
+|---|---|---|---|
+| Control Change | `CC0` | | **FX** module toggle |
+| Control Change | `CC1` | | **AMP** module toggle |
+| Control Change | `CC2` | | **MOD** module toggle |
+| Control Change | `CC3` | | **DLY** module toggle |
+| Control Change | `CC4` | | **REV** module toggle |
+| Control Change | `CC5` | | **CAB** module toggle |
+| Control Change | `CC20` | `1` | Press **HOME** button |
+| Control Change | `CC20` | `0` | Release **HOME** button |
+| Control Change | `CC21` | `1` | Press **PARA** button |
+| Control Change | `CC21` | `0` | Release **PARA** button |
+| Control Change | `CC22` | `1` | Turn **PARA** knob counterclockwise |
+| Control Change | `CC22` | `0` | Release **PARA** knob |
+| Control Change | `CC23` | `1` | Turn **PARA** knob clockwise |
+| Control Change | `CC23` | `0` | Release **PARA** knob |
+| Control Change | `CC28` | `0` or `1` | Enter / exit **Tuner** |
+| Control Change | `CC40` | `1` | **MOD** tap tempo |
+| Control Change | `CC41` | `1` | **DLY** tap tempo |
+| Control Change | `CC42` | `1` | **MOD** and **DLY** tap tempo (together) |
+| Control Change | `CC48` | `0` | **FX** select: Noise Gate ++ |
+| Control Change | `CC48` | `1` | **FX** select: Boost |
+| Control Change | `CC48` | `2` | **FX** select: Compress |
+| Control Change | `CC48` | `3` | **FX** select: AI Gate |
+| Control Change | `CC48` | `4` | **FX** select: MW-808 |
+| Control Change | `CC48` | `5` | **FX** select: MW-Gold |
+| Control Change | `CC48` | `6` | **FX** select: MW-OCD |
+| Control Change | `CC48` | `7` | **FX** select: MW-Rat |
+| Control Change | `CC48` | `8` | **FX** select: MW-Muff |
+| Control Change | `CC48` | `9` | **FX** select: MW-Face |
+| Control Change | `CC49` | `0` | **AMP** select: Amp 1 |
+| Control Change | `CC49` | `1` | **AMP** select: Amp 2 |
+| Control Change | `CC49` | `2` | **AMP** select: Amp 3 |
+| Control Change | `CC49` | `3` | **AMP** select: Amp 4 |
+| Control Change | `CC49` | `4` | **AMP** select: Amp 5 |
+| Control Change | `CC49` | `5` | **AMP** select: Amp 6 |
+| Control Change | `CC49` | `6` | **AMP** select: Amp 7 |
+| Control Change | `CC49` | `7` | **AMP** select: Amp 8 |
+| Control Change | `CC49` | `8` | **AMP** select: Amp 9 |
+| Control Change | `CC49` | `9` | **AMP** select: Amp 10 |
+| Control Change | `CC49` | `10` | **AMP** select: Amp 11 |
+| Control Change | `CC49` | `11` | **AMP** select: Amp 12 |
+| Control Change | `CC49` | `12` | **AMP** select: Amp 13 |
+| Control Change | `CC49` | `13` | **AMP** select: Amp 14 |
+| Control Change | `CC49` | `14` | **AMP** select: Amp 15 |
+| Control Change | `CC49` | `15` | **AMP** select: Amp 16 |
+| Control Change | `CC49` | `16` | **AMP** select: Amp 17 |
+| Control Change | `CC49` | `17` | **AMP** select: Amp 18 |
+| Control Change | `CC49` | `18` | **AMP** select: Amp 19 |
+| Control Change | `CC49` | `19` | **AMP** select: Amp 20 |
+| Control Change | `CC50` | `0` | **MOD** select: Chorus |
+| Control Change | `CC50` | `1` | **MOD** select: Phaser |
+| Control Change | `CC50` | `2` | **MOD** select: Tremolo |
+| Control Change | `CC50` | `3` | **MOD** select: Flanger |
+| Control Change | `CC50` | `4` | **MOD** select: Vibrato |
+| Control Change | `CC50` | `5` | **MOD** select: Univibe |
+| Control Change | `CC50` | `6` | **MOD** select: Autofilter |
+| Control Change | `CC51` | `0` | **DLY** select: Analog |
+| Control Change | `CC51` | `1` | **DLY** select: Duck |
+| Control Change | `CC51` | `2` | **DLY** select: dTape |
+| Control Change | `CC51` | `3` | **DLY** select: Dual |
+| Control Change | `CC51` | `4` | **DLY** select: Lofi |
+| Control Change | `CC52` | `0` | **REV** select: Room |
+| Control Change | `CC52` | `1` | **REV** select: Hall |
+| Control Change | `CC52` | `2` | **REV** select: Swell |
+| Control Change | `CC52` | `3` | **REV** select: Spring |
+| Control Change | `CC52` | `4` | **REV** select: Shimmer |
+| Control Change | `CC52` | `5` | **REV** select: Cloud |
+| Control Change | `CC53` | `0` | **CAB** select: Cab 1 |
+| Control Change | `CC53` | `1` | **CAB** select: Cab 2 |
+| Control Change | `CC53` | `2` | **CAB** select: Cab 3 |
+| Control Change | `CC53` | `3` | **CAB** select: Cab 4 |
+| Control Change | `CC53` | `4` | **CAB** select: Cab 5 |
+| Control Change | `CC53` | `5` | **CAB** select: Cab 6 |
+| Control Change | `CC53` | `6` | **CAB** select: Cab 7 |
+| Control Change | `CC53` | `7` | **CAB** select: Cab 8 |
+| Control Change | `CC53` | `8` | **CAB** select: Cab 9 |
+| Control Change | `CC53` | `9` | **CAB** select: Cab 10 |
+| Control Change | `CC53` | `10` | **CAB** select: Cab 11 |
+| Control Change | `CC53` | `11` | **CAB** select: Cab 12 |
+| Control Change | `CC53` | `12` | **CAB** select: Cab 13 |
+| Control Change | `CC53` | `13` | **CAB** select: Cab 14 |
+| Control Change | `CC53` | `14` | **CAB** select: Cab 15 |
+| Control Change | `CC53` | `15` | **CAB** select: Cab 16 |
+| Control Change | `CC53` | `16` | **CAB** select: Cab 17 |
+| Control Change | `CC53` | `17` | **CAB** select: Cab 18 |
+| Control Change | `CC53` | `18` | **CAB** select: Cab 19 |
+| Control Change | `CC53` | `19` | **CAB** select: Cab 20 |
+| Control Change | `CC54` | `0-127` | Current **FX** parameter 1 |
+| Control Change | `CC55` | `0-127` | Current **FX** parameter 2 |
+| Control Change | `CC56` | `0-127` | Current **FX** parameter 3 |
+| Control Change | `CC57` | `0-127` | Current **FX** parameter 4 |
+| Control Change | `CC58` | `0-127` | Current **FX** parameter 5 |
+| Control Change | `CC59` | `0-127` | Current **FX** parameter 6 |
+| Control Change | `CC60` | `0-127` | Current **AMP** parameter 1 |
+| Control Change | `CC61` | `0-127` | Current **AMP** parameter 2 |
+| Control Change | `CC62` | `0-127` | Current **AMP** parameter 3 |
+| Control Change | `CC63` | `0-127` | Current **AMP** parameter 4 |
+| Control Change | `CC64` | `0-127` | Current **AMP** parameter 5 |
+| Control Change | `CC65` | `0-127` | Current **AMP** parameter 6 |
+| Control Change | `CC66` | `0-127` | Current **MOD** parameter 1 |
+| Control Change | `CC67` | `0-127` | Current **MOD** parameter 2 |
+| Control Change | `CC68` | `0-127` | Current **MOD** parameter 3 |
+| Control Change | `CC69` | `0-127` | Current **MOD** parameter 4 |
+| Control Change | `CC70` | `0-127` | Current **MOD** parameter 5 |
+| Control Change | `CC71` | `0-127` | Current **MOD** parameter 6 |
+| Control Change | `CC72` | `0-127` | Current **DLY** parameter 1 |
+| Control Change | `CC73` | `0-127` | Current **DLY** parameter 2 |
+| Control Change | `CC74` | `0-127` | Current **DLY** parameter 3 |
+| Control Change | `CC75` | `0-127` | Current **DLY** parameter 4 |
+| Control Change | `CC76` | `0-127` | Current **DLY** parameter 5 |
+| Control Change | `CC77` | `0-127` | Current **DLY** parameter 6 |
+| Control Change | `CC78` | `0-127` | Current **REV** parameter 1 |
+| Control Change | `CC79` | `0-127` | Current **REV** parameter 2 |
+| Control Change | `CC80` | `0-127` | Current **REV** parameter 3 |
+| Control Change | `CC81` | `0-127` | Current **REV** parameter 4 |
+| Control Change | `CC82` | `0-127` | Current **REV** parameter 5 |
+| Control Change | `CC83` | `0-127` | Current **REV** parameter 6 |
+| Control Change | `CC84` | `0-127` | Current **CAB** parameter 1 |
+| Control Change | `CC85` | `0-127` | Current **CAB** parameter 2 |
+| Control Change | `CC86` | `0-127` | Current **CAB** parameter 3 |
+| Control Change | `CC87` | `0-127` | Current **CAB** parameter 4 |
+| Control Change | `CC88` | `0-127` | Current **CAB** parameter 5 |
+| Control Change | `CC89` | `0-127` | Current **CAB** parameter 6 |
+
+
 And no MIDI channel is stated anywhere.
 
 ### 1.3 Open questions on the chart — HYPOTHESES
